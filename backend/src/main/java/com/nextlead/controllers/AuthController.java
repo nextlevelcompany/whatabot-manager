@@ -2,20 +2,14 @@ package com.nextlead.controllers;
 
 import com.nextlead.dao.UserDao;
 import com.nextlead.models.User;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import com.nextlead.security.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -23,85 +17,282 @@ public class AuthController {
 
     private final UserDao userDao;
     private final PasswordEncoder passwordEncoder;
-
-    @Value("${jwt.secret}")
-    private String jwtSecret;
-
-    @Value("${jwt.expiration}")
-    private long jwtExpirationMs;
+    private final JwtUtils jwtUtils;
 
     @Autowired
-    public AuthController(UserDao userDao, PasswordEncoder passwordEncoder) {
+    public AuthController(UserDao userDao, PasswordEncoder passwordEncoder, JwtUtils jwtUtils) {
         this.userDao = userDao;
         this.passwordEncoder = passwordEncoder;
-    }
-
-    @PostMapping("/register")
-    public ResponseEntity<Map<String, String>> register(@RequestBody User user) {
-        Map<String, String> response = new HashMap<>();
-
-        if (userDao.existsByUsername(user.getUsername())) {
-            response.put("error", "El nombre de usuario ya está registrado");
-            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
-        }
-
-        // Cifrar contraseña usando BCrypt
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        
-        if (user.getRole() == null) {
-            user.setRole("USER");
-        }
-
-        userDao.save(user);
-
-        response.put("message", "Usuario registrado exitosamente");
-        return new ResponseEntity<>(response, HttpStatus.CREATED);
+        this.jwtUtils = jwtUtils;
     }
 
     @PostMapping("/login")
-    public ResponseEntity<Map<String, String>> login(@RequestBody Map<String, String> loginRequest) {
-        Map<String, String> response = new HashMap<>();
-        String username = loginRequest.get("username");
-        String password = loginRequest.get("password");
-
-        if (username == null || password == null) {
-            response.put("error", "El nombre de usuario y la contraseña son obligatorios");
-            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
+        Optional<User> userOpt = userDao.findByUsername(loginRequest.getUsername());
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            if (passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
+                String token = jwtUtils.generateToken(user.getUsername(), user.getRole());
+                return ResponseEntity.ok(new LoginResponse(token, user.getUsername(), user.getRole()));
+            }
         }
-
-        var userOpt = userDao.findByUsername(username);
-        if (userOpt.isEmpty()) {
-            response.put("error", "Credenciales incorrectas");
-            return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
-        }
-
-        User user = userOpt.get();
-        if (!passwordEncoder.matches(password, user.getPassword())) {
-            response.put("error", "Credenciales incorrectas");
-            return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
-        }
-
-        // Generar token JWT con firma
-        String token = generateJwtToken(user.getUsername(), user.getRole());
-
-        response.put("token", token);
-        response.put("username", user.getUsername());
-        response.put("role", user.getRole());
-
-        return new ResponseEntity<>(response, HttpStatus.OK);
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Usuario o contraseña incorrectos");
     }
 
-    private String generateJwtToken(String username, String role) {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
+    @GetMapping("/profile/{username}")
+    public ResponseEntity<?> getProfile(@PathVariable String username) {
+        Optional<User> userOpt = userDao.findByUsername(username);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            return ResponseEntity.ok(new ProfileResponse(
+                user.getUsername(),
+                user.getRole(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getLocation(),
+                user.getBio(),
+                user.getPhone(),
+                user.getWebsite(),
+                user.getAvatar()
+            ));
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Usuario no encontrado");
+    }
 
-        return Jwts.builder()
-                .subject(username)
-                .claim("role", role)
-                .issuedAt(now)
-                .expiration(expiryDate)
-                .signWith(key)
-                .compact();
+    @PutMapping("/profile/{username}")
+    public ResponseEntity<?> updateProfile(@PathVariable String username, @RequestBody ProfileRequest profileRequest) {
+        Optional<User> userOpt = userDao.findByUsername(username);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setFirstName(profileRequest.getFirstName());
+            user.setLastName(profileRequest.getLastName());
+            user.setLocation(profileRequest.getLocation());
+            user.setBio(profileRequest.getBio());
+            user.setPhone(profileRequest.getPhone());
+            user.setWebsite(profileRequest.getWebsite());
+            user.setAvatar(profileRequest.getAvatar());
+            userDao.updateProfile(user);
+            return ResponseEntity.ok("Perfil actualizado con éxito");
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Usuario no encontrado");
+    }
+
+    public static class LoginRequest {
+        private String username;
+        private String password;
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+    }
+
+    public static class LoginResponse {
+        private String token;
+        private String username;
+        private String role;
+
+        public LoginResponse(String token, String username, String role) {
+            this.token = token;
+            this.username = username;
+            this.role = role;
+        }
+
+        public String getToken() {
+            return token;
+        }
+
+        public void setToken(String token) {
+            this.token = token;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public void setRole(String role) {
+            this.role = role;
+        }
+    }
+
+    public static class ProfileRequest {
+        private String firstName;
+        private String lastName;
+        private String location;
+        private String bio;
+        private String phone;
+        private String website;
+        private String avatar;
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(String firstName) {
+            this.firstName = firstName;
+        }
+
+        public String getLastName() {
+            return lastName;
+        }
+
+        public void setLastName(String lastName) {
+            this.lastName = lastName;
+        }
+
+        public String getLocation() {
+            return location;
+        }
+
+        public void setLocation(String location) {
+            this.location = location;
+        }
+
+        public String getBio() {
+            return bio;
+        }
+
+        public void setBio(String bio) {
+            this.bio = bio;
+        }
+
+        public String getPhone() {
+            return phone;
+        }
+
+        public void setPhone(String phone) {
+            this.phone = phone;
+        }
+
+        public String getWebsite() {
+            return website;
+        }
+
+        public void setWebsite(String website) {
+            this.website = website;
+        }
+
+        public String getAvatar() {
+            return avatar;
+        }
+
+        public void setAvatar(String avatar) {
+            this.avatar = avatar;
+        }
+    }
+
+    public static class ProfileResponse {
+        private String username;
+        private String role;
+        private String firstName;
+        private String lastName;
+        private String location;
+        private String bio;
+        private String phone;
+        private String website;
+        private String avatar;
+
+        public ProfileResponse(String username, String role, String firstName, String lastName, String location, String bio, String phone, String website, String avatar) {
+            this.username = username;
+            this.role = role;
+            this.firstName = firstName;
+            this.lastName = lastName;
+            this.location = location;
+            this.bio = bio;
+            this.phone = phone;
+            this.website = website;
+            this.avatar = avatar;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public void setRole(String role) {
+            this.role = role;
+        }
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(String firstName) {
+            this.firstName = firstName;
+        }
+
+        public String getLastName() {
+            return lastName;
+        }
+
+        public void setLastName(String lastName) {
+            this.lastName = lastName;
+        }
+
+        public String getLocation() {
+            return location;
+        }
+
+        public void setLocation(String location) {
+            this.location = location;
+        }
+
+        public String getBio() {
+            return bio;
+        }
+
+        public void setBio(String bio) {
+            this.bio = bio;
+        }
+
+        public String getPhone() {
+            return phone;
+        }
+
+        public void setPhone(String phone) {
+            this.phone = phone;
+        }
+
+        public String getWebsite() {
+            return website;
+        }
+
+        public void setWebsite(String website) {
+            this.website = website;
+        }
+
+        public String getAvatar() {
+            return avatar;
+        }
+
+        public void setAvatar(String avatar) {
+            this.avatar = avatar;
+        }
     }
 }

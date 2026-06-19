@@ -4,9 +4,8 @@ import Image from 'next/image';
 import { useTheme } from '@/layout/theme-provider/theme-provider';
 
 //Images
-import jampackImg from '@/assets/img/Jampack.svg';
-import jampackImgDark from '@/assets/img/jampack-dark.svg';
-import logo from '@/assets/img/brand-sm.svg';
+import jampackImg from '@/assets/img/nextlead-logo.png';
+import jampackImgDark from '@/assets/img/nextlead-logo.png';
 
 const Body = () => {
     const { theme } = useTheme();
@@ -18,8 +17,7 @@ const Body = () => {
                     <div className="template-invoice-wrap mt-xxl-5 p-md-5 p-3">
                         <Row>
                             <Col lg={3} md={5} className="order-md-0 order-1">
-                                <Image src={logo} alt="logo" className='me-2' />
-                                {theme === "light" ? <Image  src={jampackImg} alt="brand" /> : <Image  src={jampackImgDark} alt="brand" />}
+                                {theme === "light" ? <Image src={jampackImg} alt="brand" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} /> : <Image src={jampackImgDark} alt="brand" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />}
                             </Col>
                             <Col lg={4} md={4} className="offset-lg-5 offset-md-3 mb-md-0 mb-2">
                                 <h2 className="d-flex justify-content-md-end mb-0">Invoice</h2>

@@ -7,8 +7,8 @@ import { ExternalLink } from 'react-feather';
 import { useTheme } from '@/layout/theme-provider/theme-provider';
 
 //Images
-import jampackImg from '@/assets/img/logo-light.svg';
-import jampackImgDark from '@/assets/img/logo-dark.svg';
+import jampackImg from '@/assets/img/nextlead-logo.svg';
+import jampackImgDark from '@/assets/img/nextlead-logo.svg';
 import logoutImg from '@/assets/img/macaroni-logged-out.png';
 import { useRouter } from 'next/navigation';
 
@@ -71,7 +71,11 @@ const Login = () => {
                             <div className="auth-content flex-column pt-8 pb-md-8 pb-13">
                                 <div className="text-center mb-7">
                                     <Link href="/" className="navbar-brand me-0">
-                                        {theme === "light" ? <Image className="brand-img d-inline-block" src={jampackImg} alt="brand" /> : <Image className="brand-img d-inline-block" src={jampackImgDark} alt="brand" />}
+                                        {theme === "light" ? (
+                                            <Image className="brand-img d-inline-block" src={jampackImg} alt="brand" style={{ height: '180px', width: 'auto', objectFit: 'contain' }} />
+                                        ) : (
+                                            <Image className="brand-img d-inline-block" src={jampackImgDark} alt="brand" style={{ height: '55px', width: 'auto', objectFit: 'contain' }} />
+                                        )}
                                     </Link>
                                 </div>
                                 <Form className="w-100" onSubmit={e => handleSubmit(e)} >

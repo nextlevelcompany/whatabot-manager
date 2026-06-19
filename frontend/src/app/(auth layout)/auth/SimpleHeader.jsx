@@ -5,8 +5,8 @@ import { Button, Container, Nav, Navbar } from 'react-bootstrap';
 import { HelpCircle } from 'react-feather';
 
 //Images
-import jampackImg from '@/assets/img/logo-light.svg';
-import jampackImgDark from '@/assets/img/logo-dark.svg';
+import jampackImg from '@/assets/img/nextlead-logo.png';
+import jampackImgDark from '@/assets/img/nextlead-logo.png';
 import { useTheme } from '@/layout/theme-provider/theme-provider';
 
 const SimpleHeader = () => {
@@ -22,7 +22,11 @@ const SimpleHeader = () => {
                 {/* Start Nav */}
                 <div className="nav-start-wrap">
                     <Navbar.Brand as={Link} href="/" >
-                        {theme === "light" ? <Image className="brand-img d-inline-block" src={jampackImg} alt="brand" /> : <Image className="brand-img d-inline-block" src={jampackImgDark} alt="brand" />}
+                        {theme === "light" ? (
+                            <Image className="brand-img d-inline-block" src={jampackImg} alt="brand" style={{ height: '36px', width: 'auto', objectFit: 'contain' }} />
+                        ) : (
+                            <Image className="brand-img d-inline-block" src={jampackImgDark} alt="brand" style={{ height: '36px', width: 'auto', objectFit: 'contain' }} />
+                        )}
                     </Navbar.Brand>
                 </div>
 

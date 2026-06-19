@@ -27,7 +27,11 @@ import mock12 from '@/assets/img/gallery/mock12.jpg'
 import mock13 from '@/assets/img/gallery/mock13.jpg'
 import mock14 from '@/assets/img/gallery/mock14.jpg'
 
-const Body = () => {
+const Body = ({ profile }) => {
+    const fullName = profile && (profile.firstName || profile.lastName)
+        ? `${profile.firstName} ${profile.lastName}`.trim()
+        : "Kate Jones";
+
     return (
         <Row className="mt-7">
             <Col lg={4} className="mb-lg-0 mb-3">
@@ -36,11 +40,11 @@ const Body = () => {
                         <div className="media align-items-center">
                             <div className="media-head me-2">
                                 <div className="avatar avatar-sm avatar-rounded">
-                                    <Image src={avatar3} alt="user" className="avatar-img" />
+                                    <img src={profile && profile.avatar ? profile.avatar : avatar3.src} alt="user" className="avatar-img" style={{ objectFit: 'cover', width: '100%', height: '100%', borderRadius: '50%' }} />
                                 </div>
                             </div>
                             <div className="media-body">
-                                <div className="fw-medium text-dark">Kate Jones</div>
+                                <div className="fw-medium text-dark">{fullName}</div>
                                 <div className="fs-7">Business Manager</div>
                             </div>
                         </div>
@@ -105,7 +109,7 @@ const Body = () => {
                                 <i className="bi bi-house-door-fill text-disabled me-2" />
                                 <span className="text-muted">Lives in:</span>
                             </span>
-                            <span className="ms-2">San Francisco, CA</span>
+                            <span className="ms-2">{profile && profile.location ? profile.location : "San Francisco, CA"}</span>
                         </ListGroup.Item>
                         <ListGroup.Item className="border-0">
                             <span>
@@ -658,7 +662,7 @@ const Body = () => {
                                     <div className="media">
                                         <div className="media-head">
                                             <div className="avatar avatar-xs avatar-rounded">
-                                                <Image src={avatar3} alt="user" className="avatar-img" />
+                                                <img src={profile && profile.avatar ? profile.avatar : avatar3.src} alt="user" className="avatar-img" style={{ objectFit: 'cover', width: '100%', height: '100%', borderRadius: '50%' }} />
                                             </div>
                                         </div>
                                         <div className="media-body">

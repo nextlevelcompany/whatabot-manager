@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    develop:
+      watch:
+        - path: ./backend/pom.xml
+          action: rebuild
+        - path: ./backend/src/main/java
+          target: /app/src/main/java
+          action: sync
+        - path: ./backend/src/main/resources
+          target: /app/src/main/resources
+          action: sync
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    develop:
+      watch:
+        - path: ./frontend/package.json
+          action: rebuild
+        - path: ./frontend/src
+          target: /app/src
+          action: sync
+        - path: ./frontend/public
+          target: /app/public
+          action: sync

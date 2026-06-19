@@ -1,0 +1,16 @@
+FROM node:18-alpine
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Instalar dependencias primero para cachear la capa
+COPY package*.json ./
+RUN npm install
+
+# Copiar el código del proyecto
+COPY . .
+
+EXPOSE 3000
+ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
+
+CMD ["npm", "run", "dev"]

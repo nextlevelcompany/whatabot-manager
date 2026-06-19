@@ -4,7 +4,14 @@ public class User {
     private Long id;
     private String username;
     private String password;
-    private String role; // e.g. ADMIN, USER
+    private String role;
+    private String firstName;
+    private String lastName;
+    private String location;
+    private String bio;
+    private String phone;
+    private String website;
+    private String avatar;
 
     public User() {}
 
@@ -15,7 +22,6 @@ public class User {
         this.role = role;
     }
 
-    // Getters y Setters
     public Long getId() {
         return id;
     }
@@ -46,5 +52,61 @@ public class User {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
+    public String getBio() {
+        return bio;
+    }
+
+    public void setBio(String bio) {
+        this.bio = bio;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getWebsite() {
+        return website;
+    }
+
+    public void setWebsite(String website) {
+        this.website = website;
+    }
+
+    public String getAvatar() {
+        return avatar;
+    }
+
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
     }
 }

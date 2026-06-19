@@ -11,8 +11,8 @@ import CommonFooter1 from '../CommonFooter1';
 import signupBg from '@/assets/img/signup-bg.jpg';
 import slide1 from '@/assets/img/slide1.jpg';
 import slide2 from '@/assets/img/slide2.jpg';
-import jampackImg from '@/assets/img/logo-light.svg';
-import jampackImgDark from '@/assets/img/logo-dark.svg';
+import jampackImg from '@/assets/img/nextlead-logo.png';
+import jampackImgDark from '@/assets/img/nextlead-logo.png';
 import { useTheme } from '@/layout/theme-provider/theme-provider';
 
 
@@ -123,7 +123,11 @@ const Signup = (props) => {
                             <div className="auth-content flex-column pt-8 pb-md-8 pb-13">
                                 <div className="text-center mb-7">
                                     <Link href="/" className="navbar-brand me-0">
-                                        {theme === "light" ? <Image className="brand-img d-inline-block" src={jampackImg} alt="brand" /> : <Image className="brand-img d-inline-block" src={jampackImgDark} alt="brand" />}
+                                        {theme === "light" ? (
+                                            <Image className="brand-img d-inline-block" src={jampackImg} alt="brand" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
+                                        ) : (
+                                            <Image className="brand-img d-inline-block" src={jampackImgDark} alt="brand" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
+                                        )}
                                     </Link>
                                 </div>
                                 <Form className="w-100" onSubmit={handleSubmit}>
