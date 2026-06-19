@@ -1,0 +1,32 @@
+# Antigravity / Gemini Coder Ignore File
+# Define patterns of files and directories to ignore for AI indexing and context.
+
+# Dependencias e instalaciones
+node_modules/
+backend/target/
+frontend/.next/
+frontend/node_modules/
+
+# Archivos de build y temporales
+.gradle/
+.idea/
+.vscode/
+*.log
+*.tmp
+
+# Datos y configuraciones locales sensibles
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+jwt.secret
+
+# Base de datos y Docker
+postgres_data/
+.docker/
+pgadmin/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
