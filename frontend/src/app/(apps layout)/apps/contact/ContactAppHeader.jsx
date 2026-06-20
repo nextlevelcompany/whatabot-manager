@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useGlobalStateContext } from '@/context/GolobalStateProvider';
 import HkTooltip from '@/components/@hk-tooltip/HkTooltip';
 
-const ContactAppHeader = ({ toggleSidebar, show }) => {
+const ContactAppHeader = ({ toggleSidebar, show, onAddNewContact, viewMode, setViewMode }) => {
     const { states, dispatch } = useGlobalStateContext();
     const pathName = usePathname();
     const contactListRoute = pathName.match("/apps/contact/contact-list");
@@ -54,7 +54,7 @@ const ContactAppHeader = ({ toggleSidebar, show }) => {
                 <Dropdown className="ms-3">
                     <Dropdown.Toggle size="sm" variant="outline-secondary" className="flex-shrink-0 d-lg-inline-block d-none">Create New</Dropdown.Toggle>
                     <Dropdown.Menu>
-                        <Dropdown.Item>Add New Contact</Dropdown.Item>
+                        <Dropdown.Item as={Link} href="/apps/contact/create-contact">Add New Contact</Dropdown.Item>
                         <Dropdown.Item>Add New Department</Dropdown.Item>
                         <Dropdown.Item>Add Category</Dropdown.Item>
                         <Dropdown.Item>Add New Tag</Dropdown.Item>
@@ -66,17 +66,38 @@ const ContactAppHeader = ({ toggleSidebar, show }) => {
                     <Dropdown.Toggle as="a" href="#" className="btn btn-icon btn-flush-dark flush-soft-hover no-caret active">
                         <span className="icon">
                             <span className="feather-icon">
-                                {contactListRoute ? <List /> : <Grid />}
+                                {contactListRoute && viewMode === 'map' ? '🗺️' : contactListRoute ? <List /> : <Grid />}
                             </span>
                         </span>
                     </Dropdown.Toggle>
                     <Dropdown.Menu align="end">
-                        <Dropdown.Item as={Link} href="/apps/contact/contact-list" className={classNames({ "active": contactListRoute })} ><span className="feather-icon dropdown-icon">
-                            <List />
-                        </span>
+                        <Dropdown.Item 
+                            as={Link} 
+                            href="/apps/contact/contact-list" 
+                            onClick={() => setViewMode && setViewMode('list')}
+                            className={classNames({ "active": contactListRoute && viewMode === 'list' })}
+                        >
+                            <span className="feather-icon dropdown-icon">
+                                <List />
+                            </span>
                             <span>List View</span>
                         </Dropdown.Item>
-                        <Dropdown.Item as={Link} href="/apps/contact/contact-cards" className={classNames({ "active": pathName === "/apps/contact/contact-cards" })}>
+                        {contactListRoute && (
+                            <Dropdown.Item 
+                                onClick={() => setViewMode && setViewMode('map')} 
+                                className={classNames({ "active": viewMode === 'map' })}
+                            >
+                                <span className="feather-icon dropdown-icon" style={{ fontSize: '1.1rem' }}>
+                                    🗺️
+                                </span>
+                                <span>Map View</span>
+                            </Dropdown.Item>
+                        )}
+                        <Dropdown.Item 
+                            as={Link} 
+                            href="/apps/contact/contact-cards" 
+                            className={classNames({ "active": pathName === "/apps/contact/contact-cards" })}
+                        >
                             <span className="feather-icon dropdown-icon">
                                 <Grid />
                             </span>

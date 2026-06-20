@@ -3,26 +3,24 @@ import { Button } from 'react-bootstrap';
 import { ChevronDown, ChevronUp } from 'react-feather';
 import HkTooltip from '@/components/@hk-tooltip/HkTooltip';
 import { useGlobalStateContext } from '@/context/GolobalStateProvider';
-import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-const EditContactHeader = ({ toggleSidebar, show }) => {
+const ViewContactHeader = ({ toggleSidebar, show, contactName }) => {
     const { states, dispatch } = useGlobalStateContext();
-    const searchParams = useSearchParams();
-    const id = searchParams.get('id');
 
     return (
         <header className="contact-header">
-            <div className="d-flex align-items-center">
+            <div className="d-flex align-items-center justify-content-between w-100 me-3">
+                <h4 className="fw-bold text-dark mb-0" style={{ fontSize: '1.25rem' }}>Ficha de Contacto</h4>
                 <nav aria-label="breadcrumb">
-                    <ol className="breadcrumb mb-0">
+                    <ol className="breadcrumb mb-0" style={{ fontSize: '0.85rem' }}>
                         <li className="breadcrumb-item">
                             <Link href="/apps/contact/contact-list">
                                 Contactos
                             </Link>
                         </li>
                         <li className="breadcrumb-item active" aria-current="page">
-                            {id ? 'Editar Contacto' : 'Nuevo Contacto'}
+                            {contactName || 'Detalle de Contacto'}
                         </li>
                     </ol>
                 </nav>
@@ -42,7 +40,7 @@ const EditContactHeader = ({ toggleSidebar, show }) => {
             </div>
             <div className={classNames("hk-sidebar-togglable", { "active": show })} onClick={toggleSidebar} />
         </header>
-    )
-}
+    );
+};
 
-export default EditContactHeader;
+export default ViewContactHeader;

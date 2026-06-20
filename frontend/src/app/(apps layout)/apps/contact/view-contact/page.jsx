@@ -2,22 +2,23 @@
 import { useState, Suspense } from 'react';
 import classNames from 'classnames';
 import ContactAppSidebar from '../ContactAppSidebar';
-import EditContactForm from './EditContactForm';
-import EditContactHeader from './EditContactHeader';
+import ViewContactHeader from './ViewContactHeader';
+import ViewContactBody from './ViewContactBody';
 
-const EditContact = () => {
+const ViewContact = () => {
     const [showSidebar, setShowSidebar] = useState(false);
+    const [contactName, setContactName] = useState('');
 
     return (
         <div className="hk-pg-body py-0">
             <div className={classNames("contactapp-wrap", { "contactapp-sidebar-toggle": showSidebar })}>
                 <ContactAppSidebar />
                 <div className="contactapp-content">
-                    <Suspense fallback={<div className="text-center py-5">Cargando formulario...</div>}>
+                    <Suspense fallback={<div className="text-center py-5">Cargando detalles del contacto...</div>}>
                         <div className="contactapp-detail-wrap">
-                            <EditContactHeader toggleSidebar={() => setShowSidebar(!showSidebar)} show={showSidebar} />
+                            <ViewContactHeader toggleSidebar={() => setShowSidebar(!showSidebar)} show={showSidebar} contactName={contactName} />
                             <div className="contact-body px-4 py-2" style={{ overflowY: 'auto' }}>
-                                <EditContactForm />
+                                <ViewContactBody setContactName={setContactName} />
                             </div>
                         </div>
                     </Suspense>
@@ -27,4 +28,4 @@ const EditContact = () => {
     )
 }
 
-export default EditContact;
+export default ViewContact;

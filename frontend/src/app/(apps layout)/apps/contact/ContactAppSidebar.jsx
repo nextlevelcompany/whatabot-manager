@@ -10,17 +10,21 @@ import HkBadge from '@/components/@hk-badge/@hk-badge';
 import HkTooltip from '@/components/@hk-tooltip/HkTooltip';
 
 
-const ContactAppSidebar = () => {
+const ContactAppSidebar = ({ onCreated, showCreateModal, setShowCreateModal }) => {
     const [addLabels, setAddLabels] = useState(false);
     const [addTags, setAddTags] = useState(false);
-    const [addNewContact, setAddNewContact] = useState(false);
+    const [localAddNewContact, setLocalAddNewContact] = useState(false);
+
+    const isControlled = showCreateModal !== undefined && setShowCreateModal !== undefined;
+    const addNewContact = isControlled ? showCreateModal : localAddNewContact;
+    const setAddNewContact = isControlled ? setShowCreateModal : setLocalAddNewContact;
 
     return (
         <>
             <Nav className="contactapp-sidebar">
                 <SimpleBar className="nicescroll-bar">
                     <div className="menu-content-wrap">
-                        <Button variant="primary" className="btn-rounded btn-block mb-4" onClick={() => setAddNewContact(!addNewContact)}>
+                        <Button variant="primary" as={Link} href="/apps/contact/create-contact" className="btn-rounded btn-block mb-4">
                             Add new contact
                         </Button>
                         <div className="menu-group">
@@ -214,7 +218,7 @@ const ContactAppSidebar = () => {
                 {/*/ Sidebar Fixnav*/}
             </Nav>
             {/* Create New Contact */}
-            <CreateNewContact show={addNewContact} close={() => setAddNewContact(!addNewContact)} />
+            <CreateNewContact show={addNewContact} close={() => setAddNewContact(!addNewContact)} onCreated={onCreated} />
             {/* Add Label */}
             <AddLabel show={addLabels} hide={() => setAddLabels(!addLabels)} />
             {/* Add Tag */}

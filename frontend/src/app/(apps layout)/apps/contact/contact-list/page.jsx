@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import classNames from 'classnames';
 import ContactAppSidebar from '../ContactAppSidebar';
 import ContactAppHeader from '../ContactAppHeader';
@@ -7,20 +7,31 @@ import ContactAppBody from './ContactAppBody';
 
 const ContactList = () => {
     const [showSidebar, setShowSidebar] = useState(false);
+    const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
+    const reloadRef = useRef(null);
+
     return (
         <div className="hk-pg-body py-0">
-            <div className={classNames("contactapp-wrap", { "contactapp-sidebar-toggle": showSidebar })} >
+            <div className={classNames("contactapp-wrap", { "contactapp-sidebar-toggle": showSidebar })}>
                 <ContactAppSidebar />
                 <div className="contactapp-content">
                     <div className="contactapp-detail-wrap">
-                        <ContactAppHeader toggleSidebar={() => setShowSidebar(!showSidebar)} show={showSidebar} />
-                        <ContactAppBody />
+                        <ContactAppHeader 
+                            toggleSidebar={() => setShowSidebar(!showSidebar)} 
+                            show={showSidebar} 
+                            viewMode={viewMode}
+                            setViewMode={setViewMode}
+                        />
+                        <ContactAppBody 
+                            reloadRef={reloadRef} 
+                            viewMode={viewMode}
+                            setViewMode={setViewMode}
+                        />
                     </div>
                 </div>
             </div>
         </div>
+    );
+};
 
-    )
-}
-
-export default ContactList
+export default ContactList;

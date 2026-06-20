@@ -2,10 +2,10 @@
 import { useState, Suspense } from 'react';
 import classNames from 'classnames';
 import ContactAppSidebar from '../ContactAppSidebar';
-import EditContactForm from './EditContactForm';
-import EditContactHeader from './EditContactHeader';
+import EditContactForm from '../edit-contact/EditContactForm';
+import EditContactHeader from '../edit-contact/EditContactHeader';
 
-const EditContact = () => {
+const CreateContact = () => {
     const [showSidebar, setShowSidebar] = useState(false);
 
     return (
@@ -27,4 +27,4 @@ const EditContact = () => {
     )
 }
 
-export default EditContact;
+export default CreateContact;

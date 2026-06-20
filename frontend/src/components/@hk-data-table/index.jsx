@@ -34,6 +34,7 @@ const HkDataTable = ({
     exports,
     searchClasses,
     markStarred,
+    onStarredChange,
     ...rest
 }) => {
 
@@ -192,7 +193,12 @@ const HkDataTable = ({
                                         checked={isRowSelected(index)}
                                         onChange={() => handleRowSelection(index)}
                                     />}
-                                    {markStarred && <span className={classNames("fav-star", { "marked": row.starred })} onClick={() => handleStared(index)} >
+                                    {markStarred && <span className={classNames("fav-star", { "marked": row.starred })} onClick={() => {
+                                        handleStared(index);
+                                        if (onStarredChange) {
+                                            onStarredChange(row);
+                                        }
+                                    }} >
                                         <span className="feather-icon">
                                             <Star />
                                         </span>
@@ -248,6 +254,7 @@ HkDataTable.propTypes = {
     searchQuery: PropTypes.string,
     searchClasses: PropTypes.string,
     markStarred: PropTypes.bool,
+    onStarredChange: PropTypes.func,
     // exports: PropTypes.bool,
 }
 

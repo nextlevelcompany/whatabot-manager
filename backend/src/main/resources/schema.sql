@@ -37,3 +37,47 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS website VARCHAR(100) DEFAULT 'hencewo
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
 
 
+-- ============================================================
+-- MÓDULO DE CONTACTOS (Perú)
+-- ============================================================
+
+-- Tabla maestra de Ubigeo del Perú (INEI)
+CREATE TABLE IF NOT EXISTS ubigeo_peru (
+    codigo_ubigeo VARCHAR(6) PRIMARY KEY,
+    departamento  VARCHAR(100) NOT NULL,
+    provincia     VARCHAR(100) NOT NULL,
+    distrito      VARCHAR(100) NOT NULL
+);
+
+-- Entidad principal de contactos (Personas Naturales y Empresas)
+CREATE TABLE IF NOT EXISTS contacts (
+    id                   BIGSERIAL PRIMARY KEY,
+    tipo_persona         VARCHAR(20)  NOT NULL CHECK (tipo_persona IN ('NATURAL','EMPRESA')),
+    tipo_documento       VARCHAR(20)  NOT NULL CHECK (tipo_documento IN ('DNI','CE','RUC')),
+    numero_documento     VARCHAR(20)  NOT NULL UNIQUE,
+    nombres              VARCHAR(100),
+    apellidos            VARCHAR(100),
+    razon_social         VARCHAR(200),
+    telefono_principal   VARCHAR(20)  NOT NULL,
+    telefono_secundario  VARCHAR(20),
+    email                VARCHAR(100),
+    empresa_id           BIGINT       REFERENCES contacts(id) ON DELETE SET NULL,
+    starred              BOOLEAN      DEFAULT FALSE,
+    date_created         TIMESTAMP    DEFAULT NOW()
+);
+
+-- Direcciones (relación 1 a Muchos con contacts)
+CREATE TABLE IF NOT EXISTS direcciones (
+    id_direccion       BIGSERIAL PRIMARY KEY,
+    id_contacto        BIGINT       NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    nombre_ubicacion   VARCHAR(100) NOT NULL,
+    codigo_ubigeo      VARCHAR(6)   REFERENCES ubigeo_peru(codigo_ubigeo) ON DELETE SET NULL,
+    direccion_completa VARCHAR(250) NOT NULL,
+    referencia         VARCHAR(250),
+    latitud            DOUBLE PRECISION,
+    longitud           DOUBLE PRECISION
+);
+
+-- Asegurar columna empresa_id si la tabla ya existía sin ella
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS empresa_id BIGINT REFERENCES contacts(id) ON DELETE SET NULL;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS referencia VARCHAR(250);

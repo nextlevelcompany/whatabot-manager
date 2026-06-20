@@ -1,0 +1,20 @@
+name: NextLead Config
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Gemini Flash Gratis
+    provider: gemini
+    model: gemini-2.5-flash
+    apiKey: "AIzaSyCP-Zl81iO4zwQaP0pP-VPPI0bn_5hxT0O"
+    roles:
+      - chat
+      - edit
+      - apply
+
+contextProviders:
+  - name: codebase
+  - name: folder
+  - name: files
+  - name: terminal
+  - name: problems
