@@ -22,6 +22,38 @@ const ViewContactBody = ({ setContactName }) => {
 
     // Active Tab State
     const [activeTab, setActiveTab] = useState('Ubicaciones'); // 'Pedidos' | 'Oportunidades' | 'Envases' | 'Ubicaciones' | 'Personal'
+    const [rightTab, setRightTab] = useState('WhatsApp'); // 'WhatsApp' | 'Notas'
+
+    // WhatsApp Chat State
+    const [wspMessages, setWspMessages] = useState([
+        { sender: 'contact', text: 'Hola, me gustaría recibir información sobre mi último pedido por favor.', time: '10:20 AM' },
+        { sender: 'me', text: 'Hola, claro que sí. Te confirmo que tu pedido ya salió de nuestro almacén.', time: '10:22 AM' },
+        { sender: 'contact', text: 'Excelente, muchas gracias por la respuesta. ¿Cuándo llegará?', time: '10:25 AM' }
+    ]);
+    const [wspInput, setWspInput] = useState('');
+
+    const sendWspMessage = () => {
+        if (!wspInput.trim()) return;
+        const newMsg = {
+            sender: 'me',
+            text: wspInput,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setWspMessages(prev => [...prev, newMsg]);
+        setWspInput('');
+        
+        // Simular respuesta automática después de 1.5 segundos
+        setTimeout(() => {
+            setWspMessages(prev => [
+                ...prev,
+                {
+                    sender: 'contact',
+                    text: '¡Entendido! Quedo a la espera de la entrega. Muchas gracias.',
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+            ]);
+        }, 1500);
+    };
 
     // Block Edit States
     const [editingIdentidad, setEditingIdentidad] = useState(false);
@@ -1113,46 +1145,135 @@ const ViewContactBody = ({ setContactName }) => {
 
 
 
+
                 </Col>
 
                 {/* Columna Derecha (30%) */}
                 <Col lg={4} className="mb-4">
                     
-                    {/* Card de Notas Internas */}
-                    <Card className="border rounded shadow-sm p-4 mb-4 d-flex flex-column" style={{ minHeight: '320px' }}>
-                        <div className="d-flex justify-content-between align-items-center mb-3">
-                            <h5 className="fw-bold text-primary mb-0" style={{ fontSize: '0.95rem', letterSpacing: '0.05em' }}>
-                                📝 NOTAS INTERNAS
-                            </h5>
-                            {!editingNotas ? (
-                                <Button variant="soft-primary" size="sm" style={{ fontSize: '0.75rem' }} onClick={startEditNotas}>
-                                    ✏️ EDITAR
-                                </Button>
-                            ) : (
-                                <div className="d-flex gap-2">
-                                    <Button variant="success" size="sm" style={{ fontSize: '0.75rem' }} onClick={handleSaveNotas}>
-                                        <Check size={12} className="me-1" /> Guardar
-                                    </Button>
-                                    <Button variant="secondary" size="sm" style={{ fontSize: '0.75rem' }} onClick={() => setEditingNotas(false)}>
-                                        <X size={12} className="me-1" /> Cancelar
-                                    </Button>
-                                </div>
-                            )}
+                    {/* Card de Notas Internas y WhatsApp */}
+                    <Card className="border rounded shadow-sm mb-4" style={{ minHeight: '510px', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+                        {/* Cabecera de pestañas */}
+                        <div className="card-header bg-light p-2 border-bottom">
+                            <ul className="nav nav-pills card-header-pills w-100 mx-0" style={{ fontSize: '0.78rem' }}>
+                                <li className="nav-item col-6 px-1 text-center">
+                                    <span 
+                                        className={`nav-link py-1 d-block ${rightTab === 'WhatsApp' ? 'active bg-success text-white fw-bold' : 'text-muted'}`} 
+                                        style={{ cursor: 'pointer', borderRadius: '6px' }} 
+                                        onClick={() => setRightTab('WhatsApp')}
+                                    >
+                                        💬 WhatsApp
+                                    </span>
+                                </li>
+                                <li className="nav-item col-6 px-1 text-center">
+                                    <span 
+                                        className={`nav-link py-1 d-block ${rightTab === 'Notas' ? 'active bg-primary text-white fw-bold' : 'text-muted'}`} 
+                                        style={{ cursor: 'pointer', borderRadius: '6px' }} 
+                                        onClick={() => setRightTab('Notas')}
+                                    >
+                                        📝 Notas Internas
+                                    </span>
+                                </li>
+                            </ul>
                         </div>
 
-                        {notasError && (
-                            <Alert variant="danger" className="py-2 mb-3" style={{ fontSize: '0.8rem' }}>
-                                {notasError}
-                            </Alert>
+                        {/* Contenido WhatsApp */}
+                        {rightTab === 'WhatsApp' && (
+                            <div className="d-flex flex-column h-100 overflow-hidden" style={{ borderRadius: '0 0 12px 12px' }}>
+                                <div className="p-2 border-bottom d-flex align-items-center justify-content-between bg-success-subtle text-success-emphasis" style={{ fontSize: '0.78rem' }}>
+                                    <span>📞 +51 {contact && contact.telefonoPrincipal ? contact.telefonoPrincipal : '---'}</span>
+                                    <span className="fw-bold text-success">● En Línea</span>
+                                </div>
+
+                                {/* Área de mensajes del Chat */}
+                                <div className="p-3" style={{ height: '380px', overflowY: 'auto', backgroundColor: '#efeae2', backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")' }}>
+                                    <div className="d-flex flex-column gap-2">
+                                        {wspMessages.map((msg, idx) => (
+                                            <div 
+                                                key={idx} 
+                                                className={`p-2 rounded shadow-sm ${msg.sender === 'me' ? 'align-self-end text-success-emphasis' : 'align-self-start'}`} 
+                                                style={{ 
+                                                    maxWidth: '85%', 
+                                                    fontSize: '0.82rem', 
+                                                    backgroundColor: msg.sender === 'me' ? '#d9fdd3' : '#ffffff',
+                                                    border: msg.sender === 'me' ? 'none' : '1px solid #cbd5e1'
+                                                }}
+                                            >
+                                                <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</p>
+                                                <small className="text-muted d-block text-end" style={{ fontSize: '0.6rem' }}>{msg.time}</small>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Entrada de mensaje */}
+                                <div className="p-2 border-top bg-light d-flex gap-2 align-items-center">
+                                    <Form.Control 
+                                        type="text" 
+                                        className="form-control-sm" 
+                                        placeholder="Escribe un mensaje de WhatsApp..." 
+                                        style={{ borderRadius: '20px', fontSize: '0.8rem', padding: '5px 12px', borderColor: '#cbd5e1' }} 
+                                        value={wspInput}
+                                        onChange={e => setWspInput(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                sendWspMessage();
+                                            }
+                                        }}
+                                    />
+                                    <Button 
+                                        variant="success" 
+                                        size="sm" 
+                                        className="btn-icon rounded-circle d-flex align-items-center justify-content-center" 
+                                        style={{ width: '28px', height: '28px', padding: 0 }} 
+                                        onClick={sendWspMessage}
+                                        disabled={!wspInput.trim()}
+                                    >
+                                        <span style={{ fontSize: '0.8rem', color: 'white' }}>➡️</span>
+                                    </Button>
+                                </div>
+                            </div>
                         )}
 
-                        {!editingNotas ? (
-                            <div className="p-3 border rounded bg-light flex-grow-1" style={{ fontSize: '0.85rem', color: '#6c757d', minHeight: '220px' }}>
-                                {contact.referencia || "Sin observaciones adicionales."}
+                        {/* Contenido Notas Internas */}
+                        {rightTab === 'Notas' && (
+                            <div className="card-body p-3 d-flex flex-column" style={{ minHeight: '350px' }}>
+                                <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 className="fw-bold text-muted mb-0" style={{ fontSize: '0.8rem' }}>
+                                        OBSERVACIONES
+                                    </h6>
+                                    {!editingNotas ? (
+                                        <Button variant="soft-primary" size="sm" style={{ fontSize: '0.72rem', padding: '2px 8px' }} onClick={startEditNotas}>
+                                            ✏️ EDITAR
+                                        </Button>
+                                    ) : (
+                                        <div className="d-flex gap-2">
+                                            <Button variant="success" size="sm" style={{ fontSize: '0.72rem', padding: '2px 8px' }} onClick={handleSaveNotas}>
+                                                <Check size={10} className="me-1" /> Guardar
+                                            </Button>
+                                            <Button variant="secondary" size="sm" style={{ fontSize: '0.72rem', padding: '2px 8px' }} onClick={() => setEditingNotas(false)}>
+                                                <X size={10} className="me-1" /> Cancelar
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {notasError && (
+                                    <Alert variant="danger" className="py-1 mb-2" style={{ fontSize: '0.75rem' }}>
+                                        {notasError}
+                                    </Alert>
+                                )}
+
+                                {!editingNotas ? (
+                                    <div className="p-3 border rounded bg-light flex-grow-1" style={{ fontSize: '0.82rem', color: '#6c757d', minHeight: '260px' }}>
+                                        {contact && contact.referencia ? contact.referencia : "Sin observaciones adicionales."}
+                                    </div>
+                                ) : (
+                                    <Form.Control as="textarea" rows={10} className="p-3 border rounded flex-grow-1" style={{ fontSize: '0.82rem', minHeight: '260px' }}
+                                        value={draftNotas} onChange={e => setDraftNotas(e.target.value)} />
+                                )}
                             </div>
-                        ) : (
-                            <Form.Control as="textarea" rows={8} className="p-3 border rounded flex-grow-1" style={{ fontSize: '0.85rem', minHeight: '220px' }}
-                                value={draftNotas} onChange={e => setDraftNotas(e.target.value)} />
                         )}
                     </Card>
 
