@@ -102,7 +102,7 @@ const actionFormater = (cell) => {
                             <span className="feather-icon dropdown-icon">
                                 <Edit />
                             </span>
-                            <span>Edit Contact</span>
+                            <span>Editar Contacto</span>
                         </Dropdown.Item>
                         <Dropdown.Item as={Link} href="#">
                             <span className="feather-icon dropdown-icon">

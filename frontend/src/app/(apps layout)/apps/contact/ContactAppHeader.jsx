@@ -16,45 +16,45 @@ const ContactAppHeader = ({ toggleSidebar, show, onAddNewContact, viewMode, setV
             <div className="d-flex align-items-center">
                 <Dropdown>
                     <Dropdown.Toggle as="a" className="contactapp-title link-dark" href="#" >
-                        <h1>Contacts</h1>
+                        <h1>Contactos</h1>
                     </Dropdown.Toggle>
                     <Dropdown.Menu>
                         <Dropdown.Item>
                             <span className="feather-icon dropdown-icon">
                                 <User />
                             </span>
-                            <span>All Contacts</span>
+                            <span>Todos los Contactos</span>
                         </Dropdown.Item>
                         <Dropdown.Item>
                             <span className="feather-icon dropdown-icon">
                                 <Star />
                             </span>
-                            <span>Important</span>
+                            <span>Importantes</span>
                         </Dropdown.Item>
                         <Dropdown.Item>
                             <span className="feather-icon dropdown-icon">
                                 <Archive />
                             </span>
-                            <span>Archive</span>
+                            <span>Archivos</span>
                         </Dropdown.Item>
                         <Dropdown.Item>
                             <span className="feather-icon dropdown-icon">
                                 <Edit />
                             </span>
-                            <span>Pending</span>
+                            <span>Pendiente</span>
                         </Dropdown.Item>
                         <Dropdown.Item>
                             <span className="feather-icon dropdown-icon">
                                 <Trash2 />
                             </span>
-                            <span>Deleted</span>
+                            <span>Elininar</span>
                         </Dropdown.Item>
                     </Dropdown.Menu>
                 </Dropdown>
                 <Dropdown className="ms-3">
-                    <Dropdown.Toggle size="sm" variant="outline-secondary" className="flex-shrink-0 d-lg-inline-block d-none">Create New</Dropdown.Toggle>
+                    <Dropdown.Toggle size="sm" variant="outline-secondary" className="flex-shrink-0 d-lg-inline-block d-none">Crear Nuevo</Dropdown.Toggle>
                     <Dropdown.Menu>
-                        <Dropdown.Item as={Link} href="/apps/contact/create-contact">Add New Contact</Dropdown.Item>
+                        <Dropdown.Item as={Link} href="/apps/contact/create-contact">Crear Contacto</Dropdown.Item>
                         <Dropdown.Item>Add New Department</Dropdown.Item>
                         <Dropdown.Item>Add Category</Dropdown.Item>
                         <Dropdown.Item>Add New Tag</Dropdown.Item>

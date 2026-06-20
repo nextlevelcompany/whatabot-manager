@@ -7,7 +7,13 @@ import HkDataTable from '@/components/@hk-data-table';
 import { Edit, Trash, Eye } from 'react-feather';
 import ContactsMap from './ContactsMap';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const getApiBase = () => {
+    if (typeof window !== 'undefined') {
+        return `${window.location.protocol}//${window.location.hostname}:8080`;
+    }
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+};
+const API_BASE = getApiBase();
 
 const ContactAppBody = ({ reloadRef, viewMode, setViewMode }) => {
     const [contacts, setContacts] = useState([]);

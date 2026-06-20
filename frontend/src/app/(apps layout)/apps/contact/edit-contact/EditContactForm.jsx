@@ -6,7 +6,13 @@ import Link from 'next/link';
 import { Search, MapPin, Link as LinkIcon } from 'react-feather';
 import InteractiveMap from '../InteractiveMap';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const getApiBase = () => {
+    if (typeof window !== 'undefined') {
+        return `${window.location.protocol}//${window.location.hostname}:8080`;
+    }
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+};
+const API_BASE = getApiBase();
 
 // Bloque de una sola dirección
 const DireccionBlock = ({ index, direccion, onChange, onRemove, ubigeos }) => {
@@ -125,7 +131,7 @@ const DireccionBlock = ({ index, direccion, onChange, onRemove, ubigeos }) => {
     return (
         <div className="direccion-block border rounded p-2 mb-2 position-relative" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' }}>
             <div className="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom">
-                <span className="fw-semibold text-primary" style={{ fontSize: '0.8rem' }}>📍 Dirección {index + 1}</span>
+                <span className="fw-semibold text-primary" style={{ fontSize: '0.8rem' }}> <i class="bi bi-map-fill"></i> Dirección {index + 1}</span>
                 <div className="d-flex gap-2 align-items-center">
                     <span 
                         onClick={() => setShowMap(!showMap)} 
@@ -214,7 +220,7 @@ const DireccionBlock = ({ index, direccion, onChange, onRemove, ubigeos }) => {
  
                 {/* Mapa Interactivo (Colapsable) */}
                 {showMap && (
-                    <Col xs={12} className="mt-1" style={{ height: '220px' }}>
+                    <Col xs={12} className="mt-1" style={{ height: '192px' }}>
                         <InteractiveMap 
                             lat={direccion.latitud} 
                             lng={direccion.longitud} 
@@ -407,10 +413,22 @@ const EditContactForm = () => {
             if (res.ok) {
                 router.push('/apps/contact/contact-list');
             } else {
-                const data = await res.json();
-                setError(Array.isArray(data) ? data.join(' • ') : String(data));
+                let errMsg = 'Ocurrió un error en el servidor.';
+                try {
+                    const contentType = res.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
+                        const data = await res.json();
+                        errMsg = Array.isArray(data) ? data.join(' • ') : String(data);
+                    } else {
+                        errMsg = await res.text() || 'Error sin respuesta';
+                    }
+                } catch (parseErr) {
+                    console.error("Error parsing response:", parseErr);
+                }
+                setError(errMsg);
             }
         } catch (e) {
+            console.error("Submit fetch error:", e);
             setError('Error de conexión con el servidor.');
         } finally {
             setSaving(false);
@@ -426,70 +444,87 @@ const EditContactForm = () => {
         );
     }
 
+    const labelStyle = {
+        fontSize: '0.78rem',
+        fontWeight: '600',
+        color: '#475569',
+        marginBottom: '6px',
+        display: 'block'
+    };
+
+    const inputStyle = {
+        fontSize: '0.85rem',
+        padding: '6px 10px',
+        borderRadius: '8px',
+        borderColor: '#cbd5e1',
+        boxShadow: 'none',
+        transition: 'border-color 0.2s, box-shadow 0.2s'
+    };
+
     return (
-        <Card className="card-flush mt-4 border shadow-sm">
-            <Card.Header className="pt-4 pb-0 bg-transparent border-bottom-0">
-                <h4 className="card-title fw-bold text-dark">{id ? '✏️ Editar Contacto' : '👤 Nuevo Contacto'}</h4>
-                <p className="text-muted" style={{ fontSize: '0.85rem' }}>Completa los datos de identidad y gestiona sus ubicaciones de entrega.</p>
-            </Card.Header>
-            <Card.Body className="pt-0">
-                <Form onSubmit={handleSubmit}>
-                    {error && <Alert variant="danger" className="py-2 mb-3" style={{ fontSize: '0.85rem' }}>{error}</Alert>}
-                    <Row className="gx-4">
-                        {/* Columna Izquierda: Identidad y Contacto */}
-                        <Col lg={6} className="border-end pe-lg-4 mb-4">
-                            <div className="title title-xs title-wth-divider text-primary text-uppercase mb-3 fw-bold d-flex justify-content-between align-items-center" style={{ fontSize: '0.75rem', letterSpacing: '0.05em' }}>
-                                <span>Tipo de Contacto *</span>
-                                <Button variant="soft-primary" size="sm" style={{ fontSize: '0.75rem', padding: '3px 8px', visibility: 'hidden' }}>
-                                    &nbsp;
-                                </Button>
-                            </div>
+        <div className="container-fluid px-0">
+            {/* Cabecera Premium */}
+            <div className="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+                <div>
+                    <h3 className="fw-bold text-dark mb-1">{id ? '✏️ Editar Contacto' : '👤 Nuevo Contacto'}</h3>
+                    <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>Completa los datos de identidad y gestiona sus ubicaciones de entrega.</p>
+                </div>
+            </div>
 
-                            <div className="d-flex gap-1 flex-wrap mb-2 pb-2 border-bottom">
-                                <Button
-                                    variant={tipoPersona === 'NATURAL' ? 'primary' : 'outline-secondary'}
-                                    size="sm"
-                                    onClick={() => !id && setTipoPersona('NATURAL')}
-                                    style={{ 
-                                        fontSize: '0.72rem', 
-                                        padding: '2px 8px', 
-                                        borderRadius: '15px',
-                                        cursor: id ? 'not-allowed' : 'pointer',
-                                        fontWeight: tipoPersona === 'NATURAL' ? 'bold' : 'normal'
-                                    }}
-                                    disabled={id && tipoPersona !== 'NATURAL'}
-                                >
-                                    👤 Persona Natural
-                                </Button>
-                                <Button
-                                    variant={tipoPersona === 'EMPRESA' ? 'primary' : 'outline-secondary'}
-                                    size="sm"
-                                    onClick={() => !id && setTipoPersona('EMPRESA')}
-                                    style={{ 
-                                        fontSize: '0.72rem', 
-                                        padding: '2px 8px', 
-                                        borderRadius: '15px',
-                                        cursor: id ? 'not-allowed' : 'pointer',
-                                        fontWeight: tipoPersona === 'EMPRESA' ? 'bold' : 'normal'
-                                    }}
-                                    disabled={id && tipoPersona !== 'EMPRESA'}
-                                >
-                                    🏢 Empresa
-                                </Button>
-                            </div>
-
-                                <div className="title title-xs title-wth-divider text-primary text-uppercase mb-3 fw-bold" style={{ fontSize: '0.75rem', letterSpacing: '0.05em' }}>
-                                    <span>1. Identidad</span>
+            <Form onSubmit={handleSubmit}>
+                {error && <Alert variant="danger" className="py-2 mb-3 shadow-sm" style={{ fontSize: '0.85rem', borderRadius: '8px' }}>{error}</Alert>}
+                <Row className="gx-4">
+                    {/* Columna Izquierda: Identidad y Datos de Contacto */}
+                    <Col lg={6}>
+                        {/* Tarjeta 1: Identidad */}
+                        <Card className="border shadow-sm mb-4" style={{ borderRadius: '12px' }}>
+                            <Card.Body className="p-4">
+                                <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                                    <span className="fw-bold text-primary text-uppercase" style={{ fontSize: '0.8rem', letterSpacing: '0.05em' }}>
+                                        1. Identificación y Tipo
+                                    </span>
                                 </div>
+
+                                <Form.Group className="mb-4">
+                                    <Form.Label style={labelStyle}>Tipo de Contacto *</Form.Label>
+                                    <div className="btn-group btn-group-sm w-100" style={{ borderRadius: '8px', overflow: 'hidden' }}>
+                                        <Button
+                                            variant={tipoPersona === 'NATURAL' ? 'primary' : 'outline-secondary'}
+                                            onClick={() => !id && setTipoPersona('NATURAL')}
+                                            style={{ 
+                                                fontSize: '0.8rem', 
+                                                padding: '8px 12px',
+                                                fontWeight: tipoPersona === 'NATURAL' ? '600' : 'normal',
+                                                cursor: id ? 'not-allowed' : 'pointer'
+                                            }}
+                                            disabled={id && tipoPersona !== 'NATURAL'}
+                                        >
+                                            <i class="bi bi-person-badge-fill"></i> Persona Natural
+                                        </Button>
+                                        <Button
+                                            variant={tipoPersona === 'EMPRESA' ? 'primary' : 'outline-secondary'}
+                                            onClick={() => !id && setTipoPersona('EMPRESA')}
+                                            style={{ 
+                                                fontSize: '0.8rem', 
+                                                padding: '8px 12px',
+                                                fontWeight: tipoPersona === 'EMPRESA' ? '600' : 'normal',
+                                                cursor: id ? 'not-allowed' : 'pointer'
+                                            }}
+                                            disabled={id && tipoPersona !== 'EMPRESA'}
+                                        >
+                                            <i class="bi bi-building"></i> Empresa
+                                        </Button>
+                                    </div>
+                                </Form.Group>
 
                                 <Row className="gx-2">
                                     <Col sm={4} className="mb-3">
                                         <Form.Group>
-                                            <Form.Label className="fw-semibold form-label-sm">Tipo Doc. *</Form.Label>
+                                            <Form.Label style={labelStyle}>Tipo Doc. *</Form.Label>
                                             {tipoPersona === 'EMPRESA' ? (
-                                                <Form.Control size="sm" value="RUC" disabled />
+                                                <Form.Control size="sm" value="RUC" style={inputStyle} disabled />
                                             ) : (
-                                                <Form.Select size="sm" value={tipoDocumento} onChange={e => { setTipoDocumento(e.target.value); setNumeroDocumento(''); }}>
+                                                <Form.Select size="sm" value={tipoDocumento} style={inputStyle} onChange={e => { setTipoDocumento(e.target.value); setNumeroDocumento(''); }}>
                                                     <option value="DNI">DNI</option>
                                                     <option value="CE">CE</option>
                                                 </Form.Select>
@@ -498,11 +533,12 @@ const EditContactForm = () => {
                                     </Col>
                                     <Col sm={8} className="mb-3">
                                         <Form.Group>
-                                            <Form.Label className="fw-semibold form-label-sm">N° Documento *</Form.Label>
+                                            <Form.Label style={labelStyle}>N° Documento *</Form.Label>
                                             <Form.Control
                                                 size="sm"
                                                 type="text"
                                                 value={numeroDocumento}
+                                                style={inputStyle}
                                                 onChange={e => setNumeroDocumento(e.target.value.replace(/\s/g, ''))}
                                                 isValid={docValido() === true}
                                                 isInvalid={docValido() === false}
@@ -517,20 +553,20 @@ const EditContactForm = () => {
                                     <Row className="gx-2">
                                         <Col sm={6} className="mb-3">
                                             <Form.Group>
-                                                <Form.Label className="fw-semibold form-label-sm">Nombres *</Form.Label>
-                                                <Form.Control size="sm" type="text" value={nombres} onChange={e => setNombres(e.target.value)} placeholder="Carlos Andrés" />
+                                                <Form.Label style={labelStyle}>Nombres *</Form.Label>
+                                                <Form.Control size="sm" type="text" style={inputStyle} value={nombres} onChange={e => setNombres(e.target.value)} placeholder="Carlos Andrés" />
                                             </Form.Group>
                                         </Col>
                                         <Col sm={6} className="mb-3">
                                             <Form.Group>
-                                                <Form.Label className="fw-semibold form-label-sm">Apellidos *</Form.Label>
-                                                <Form.Control size="sm" type="text" value={apellidos} onChange={e => setApellidos(e.target.value)} placeholder="Quispe Mamani" />
+                                                <Form.Label style={labelStyle}>Apellidos *</Form.Label>
+                                                <Form.Control size="sm" type="text" style={inputStyle} value={apellidos} onChange={e => setApellidos(e.target.value)} placeholder="Quispe Mamani" />
                                             </Form.Group>
                                         </Col>
                                         <Col sm={12} className="mb-3">
                                             <Form.Group>
-                                                <Form.Label className="fw-semibold form-label-sm">Empresa Vinculada <span className="text-muted">(opcional)</span></Form.Label>
-                                                <Form.Select size="sm" value={empresaId} onChange={e => setEmpresaId(e.target.value)}>
+                                                <Form.Label style={labelStyle}>Empresa Vinculada <span className="text-muted">(opcional)</span></Form.Label>
+                                                <Form.Select size="sm" style={inputStyle} value={empresaId} onChange={e => setEmpresaId(e.target.value)}>
                                                     <option value="">-- Sin empresa --</option>
                                                     {empresas.map(e => (
                                                         <option key={e.id} value={e.id}>
@@ -547,23 +583,31 @@ const EditContactForm = () => {
                                     <Row className="gx-2">
                                         <Col sm={12} className="mb-3">
                                             <Form.Group>
-                                                <Form.Label className="fw-semibold form-label-sm">Razón Social *</Form.Label>
-                                                <Form.Control size="sm" type="text" value={razonSocial} onChange={e => setRazonSocial(e.target.value)} placeholder="NextLead Technologies S.A.C." />
+                                                <Form.Label style={labelStyle}>Razón Social *</Form.Label>
+                                                <Form.Control size="sm" type="text" style={inputStyle} value={razonSocial} onChange={e => setRazonSocial(e.target.value)} placeholder="NextLead Technologies S.A.C." />
                                             </Form.Group>
                                         </Col>
                                     </Row>
                                 )}
+                            </Card.Body>
+                        </Card>
 
-                                <div className="title title-xs title-wth-divider text-primary text-uppercase my-3 fw-bold" style={{ fontSize: '0.75rem', letterSpacing: '0.05em' }}>
-                                    <span>2. Datos de Contacto</span>
+                        {/* Tarjeta 2: Datos de Contacto */}
+                        <Card className="border shadow-sm mb-4" style={{ borderRadius: '12px' }}>
+                            <Card.Body className="p-4">
+                                <div className="mb-3 pb-2 border-bottom">
+                                    <span className="fw-bold text-primary text-uppercase" style={{ fontSize: '0.8rem', letterSpacing: '0.05em' }}>
+                                        2. Datos de Contacto
+                                    </span>
                                 </div>
                                 <Row className="gx-2">
                                     <Col sm={6} className="mb-3">
                                         <Form.Group>
-                                            <Form.Label className="fw-semibold form-label-sm">Teléfono Principal *</Form.Label>
+                                            <Form.Label style={labelStyle}>Teléfono Principal *</Form.Label>
                                             <div className="input-group input-group-sm">
-                                                <span className="input-group-text">+51</span>
+                                                <span className="input-group-text" style={{ borderTopLeftRadius: '8px', borderBottomLeftRadius: '8px', backgroundColor: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1', fontSize: '0.8rem' }}>+51</span>
                                                 <Form.Control type="text" maxLength={9} value={telefonoPrincipal}
+                                                    style={{ ...inputStyle, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
                                                     onChange={e => setTelefonoPrincipal(e.target.value.replace(/\D/g, ''))}
                                                     placeholder="999888777" />
                                             </div>
@@ -572,10 +616,11 @@ const EditContactForm = () => {
                                     </Col>
                                     <Col sm={6} className="mb-3">
                                         <Form.Group>
-                                            <Form.Label className="fw-semibold form-label-sm">Teléfono Secundario</Form.Label>
+                                            <Form.Label style={labelStyle}>Teléfono Secundario</Form.Label>
                                             <div className="input-group input-group-sm">
-                                                <span className="input-group-text">+51</span>
+                                                <span className="input-group-text" style={{ borderTopLeftRadius: '8px', borderBottomLeftRadius: '8px', backgroundColor: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1', fontSize: '0.8rem' }}>+51</span>
                                                 <Form.Control type="text" maxLength={9} value={telefonoSecundario}
+                                                    style={{ ...inputStyle, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
                                                     onChange={e => setTelefonoSecundario(e.target.value.replace(/\D/g, ''))}
                                                     placeholder="999777666" />
                                             </div>
@@ -583,42 +628,48 @@ const EditContactForm = () => {
                                     </Col>
                                     <Col sm={12} className="mb-3">
                                         <Form.Group>
-                                            <Form.Label className="fw-semibold form-label-sm">Email</Form.Label>
-                                            <Form.Control size="sm" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="cliente@correo.com" />
+                                            <Form.Label style={labelStyle}>Email</Form.Label>
+                                            <Form.Control size="sm" type="email" style={inputStyle} value={email} onChange={e => setEmail(e.target.value)} placeholder="cliente@correo.com" />
                                         </Form.Group>
                                     </Col>
                                 </Row>
-                            </Col>
+                            </Card.Body>
+                        </Card>
+                    </Col>
 
-                            {/* Columna Derecha: Direcciones */}
-                            <Col lg={6} className="ps-lg-4 mb-4 d-flex flex-column" style={{ maxHeight: '72vh' }}>
-                                <div className="title title-xs title-wth-divider text-primary text-uppercase mb-3 fw-bold d-flex justify-content-between align-items-center" style={{ fontSize: '0.75rem', letterSpacing: '0.05em' }}>
-                                    <span>3. Direcciones de Entrega</span>
-                                    <Button variant="soft-primary" size="sm" onClick={addDireccionBlock} style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
+                    {/* Columna Derecha: Direcciones y Acciones */}
+                    <Col lg={6}>
+                        <Card className="border shadow-sm mb-4" style={{ borderRadius: '12px' }}>
+                            <Card.Body className="p-4">
+                                <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                                    <span className="fw-bold text-primary text-uppercase" style={{ fontSize: '0.8rem', letterSpacing: '0.05em' }}>
+                                        3. Direcciones de Entrega
+                                    </span>
+                                    <Button variant="soft-primary" size="sm" onClick={addDireccionBlock} style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '6px' }}>
                                         + Agregar Dirección
                                     </Button>
                                 </div>
 
-                                {/* Selectores de direcciones arriba, estilo pestañas */}
+                                {/* Selectores de direcciones estilo pestañas */}
                                 {direcciones.length > 0 && (
-                                    <div className="d-flex gap-1 flex-wrap mb-2 pb-2 border-bottom">
+                                    <div className="d-flex gap-1 flex-wrap mb-3 pb-2 border-bottom">
                                         {direcciones.map((dir, idx) => (
                                             <Button
                                                 key={idx}
                                                 variant={activeDirIndex === idx ? 'primary' : 'outline-secondary'}
                                                 size="sm"
                                                 onClick={() => setActiveDirIndex(idx)}
-                                                style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '15px' }}
+                                                style={{ fontSize: '0.72rem', padding: '4px 10px', borderRadius: '10px' }}
                                             >
-                                                📍 {dir.nombreUbicacion || `Dirección ${idx + 1}`}
+                                                <i class="bi bi-map-fill"></i> {dir.nombreUbicacion || `Dirección ${idx + 1}`}
                                             </Button>
                                         ))}
                                     </div>
                                 )}
 
-                                <div style={{ overflowY: 'auto', flexGrow: 1, paddingRight: '5px', minHeight: '300px', maxHeight: '48vh' }} className="pe-2">
+                                <div className="pe-1">
                                     {direcciones.length === 0 ? (
-                                        <Alert variant="info" className="py-2 mb-0" style={{ fontSize: '0.8rem' }}>
+                                        <Alert variant="info" className="py-2 mb-0" style={{ fontSize: '0.8rem', borderRadius: '8px' }}>
                                             Ninguna dirección agregada. Haz clic en &quot;+ Agregar Dirección&quot;.
                                         </Alert>
                                     ) : (
@@ -632,19 +683,20 @@ const EditContactForm = () => {
                                     )}
                                 </div>
 
-                                <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top bg-white">
-                                    <Link href="/apps/contact/contact-list" className="btn btn-secondary">
+                                <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                                    <Link href="/apps/contact/contact-list" className="btn btn-secondary btn-sm px-3" style={{ borderRadius: '8px' }}>
                                         Cancelar
                                     </Link>
-                                    <Button variant="primary" type="submit" disabled={saving}>
-                                        {saving ? 'Guardando...' : id ? 'Guardar Cambios' : 'Crear Contacto'}
+                                    <Button variant="primary" type="submit" size="sm" className="px-3" style={{ borderRadius: '8px' }} disabled={saving}>
+                                        {saving ? <><Spinner animation="border" size="sm" className="me-2" />Guardando...</> : id ? 'Guardar Cambios' : 'Crear Contacto'}
                                     </Button>
                                 </div>
-                            </Col>
-                        </Row>
-                </Form>
-            </Card.Body>
-        </Card>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                </Row>
+            </Form>
+        </div>
     );
 };
 

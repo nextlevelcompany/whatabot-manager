@@ -112,7 +112,7 @@ const InteractiveMap = ({ lat, lng, onChange }) => {
         <div 
             ref={mapContainerRef} 
             className="border rounded overflow-hidden" 
-            style={{ width: '100%', height: '100%', minHeight: '200px', zIndex: 1 }} 
+            style={{ width: '100%', height: '100%', minHeight: '100%', zIndex: 1 }} 
         />
     );
 };

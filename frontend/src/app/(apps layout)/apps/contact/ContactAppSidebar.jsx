@@ -25,7 +25,7 @@ const ContactAppSidebar = ({ onCreated, showCreateModal, setShowCreateModal }) =
                 <SimpleBar className="nicescroll-bar">
                     <div className="menu-content-wrap">
                         <Button variant="primary" as={Link} href="/apps/contact/create-contact" className="btn-rounded btn-block mb-4">
-                            Add new contact
+                           Crear Contactos
                         </Button>
                         <div className="menu-group">
                             <Nav className="nav-light navbar-nav flex-column">
@@ -36,7 +36,7 @@ const ContactAppSidebar = ({ onCreated, showCreateModal, setShowCreateModal }) =
                                                 <Inbox />
                                             </span>
                                         </span>
-                                        <span className="nav-link-text">All Contacts</span>
+                                        <span className="nav-link-text">Todos Contactos</span>
                                     </Nav.Link>
                                 </Nav.Item>
                                 <Nav.Item>
