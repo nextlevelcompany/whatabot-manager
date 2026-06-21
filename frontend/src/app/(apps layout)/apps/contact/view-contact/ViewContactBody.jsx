@@ -1411,7 +1411,7 @@ const ViewContactBody = ({ setContactName }) => {
                                         style={{ cursor: 'pointer', borderRadius: '6px' }} 
                                         onClick={() => setRightTab('WhatsApp')}
                                     >
-                                        <i class="bi bi-whatsapp"></i> WhatsApp
+                                        <i className="bi bi-whatsapp"></i> WhatsApp
                                     </span>
                                 </li>
                                 <li className="nav-item col-6 px-1 text-center">
@@ -1420,7 +1420,7 @@ const ViewContactBody = ({ setContactName }) => {
                                         style={{ cursor: 'pointer', borderRadius: '6px' }} 
                                         onClick={() => setRightTab('Notas')}
                                     >
-                                       <i class="bi bi-journal-text"></i> Notas Internas
+                                       <i className="bi bi-journal-text"></i> Notas Internas
                                     </span>
                                 </li>
                             </ul>
@@ -1596,7 +1596,7 @@ const ViewContactBody = ({ setContactName }) => {
                                         style={{ fontSize: '1.3rem', cursor: 'pointer' }}
                                         title="Adjuntar archivo, imagen, audio o video"
                                     >
-                                        <i class="bi bi-paperclip"></i>
+                                        <i className="bi bi-paperclip"></i>
                                     </label>
 
                                     <Button 

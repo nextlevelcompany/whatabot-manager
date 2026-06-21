@@ -177,6 +177,34 @@ export default function ConfigPage() {
                                     </Form.Text>
                                 </Form.Group>
 
+                                <Form.Group className="mb-3" controlId="wspCallbackUrl">
+                                    <Form.Label className="fw-semibold small">URL de retorno del Webhook (Callback URL)</Form.Label>
+                                    <InputGroup>
+                                        <Form.Control
+                                            type="text"
+                                            value={`${API_BASE}/api/whatsapp/webhook`}
+                                            readOnly
+                                            className="form-control-lg bg-light"
+                                            style={{ fontSize: '0.9rem' }}
+                                        />
+                                        <Button 
+                                            variant="outline-secondary"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`${API_BASE}/api/whatsapp/webhook`);
+                                                setAlert({ show: true, type: 'success', message: 'URL copiada al portapapeles.' });
+                                                setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 2000);
+                                            }}
+                                            style={{ borderTopRightRadius: '8px', borderBottomRightRadius: '8px' }}
+                                        >
+                                            <Icons.Copy size={18} />
+                                        </Button>
+                                    </InputGroup>
+                                    <Form.Text className="text-muted small">
+                                        Esta es la URL que debes ingresar en la sección de configuración del Webhook de tu app en Meta Developers.
+                                        <em> (Si estás en localhost, recuerda usar un túnel como ngrok y usar la URL HTTPS de ngrok).</em>
+                                    </Form.Text>
+                                </Form.Group>
+
                                 <Form.Group className="mb-3" controlId="wspVerifyToken">
                                     <Form.Label className="fw-semibold small">Token de verificación del Webhook</Form.Label>
                                     <Form.Control
