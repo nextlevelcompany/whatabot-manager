@@ -4,8 +4,11 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
     receiver VARCHAR(50) NOT NULL,
     message_text TEXT NOT NULL,
     timestamp TIMESTAMP NOT NULL,
-    status VARCHAR(20) NOT NULL
+    status VARCHAR(20) NOT NULL,
+    wamid VARCHAR(100)
 );
+
+ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS wamid VARCHAR(100);
 
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

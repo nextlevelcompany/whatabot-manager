@@ -33,6 +33,7 @@ const ViewContactBody = ({ setContactName }) => {
     // WhatsApp Chat State
     const [wspMessages, setWspMessages] = useState([]);
     const [wspInput, setWspInput] = useState('');
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const chatEndRef = useRef(null);
 
     // Auto-scroll to bottom of chat
@@ -58,9 +59,12 @@ const ViewContactBody = ({ setContactName }) => {
                     const formatted = data.map(msg => {
                         const msgSenderLast9 = msg.sender.length >= 9 ? msg.sender.substring(msg.sender.length - 9) : msg.sender;
                         return {
+                            id: msg.id,
+                            wamid: msg.wamid,
                             sender: msgSenderLast9 === contactLast9 ? 'contact' : 'me',
                             text: msg.messageText,
-                            time: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            time: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            status: msg.status
                         };
                     });
                     setWspMessages(formatted);
@@ -103,17 +107,53 @@ const ViewContactBody = ({ setContactName }) => {
                         const timeStr = new Date(body.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                         
                         setWspMessages(prev => {
+                            // 1. Si el mensaje ya existe (por id o wamid), actualizamos su estado
+                            const index = prev.findIndex(m => (body.id && m.id === body.id) || (body.wamid && m.wamid === body.wamid));
+                            if (index !== -1) {
+                                const updated = [...prev];
+                                updated[index] = {
+                                    ...updated[index],
+                                    id: body.id,
+                                    wamid: body.wamid,
+                                    status: body.status
+                                };
+                                return updated;
+                            }
+
+                            // 2. Si no coincide por id/wamid, ver si coincide con un mensaje enviado localmente (optimista)
                             const bodySenderLast9 = body.sender.length >= 9 ? body.sender.substring(body.sender.length - 9) : body.sender;
+                            const isMe = bodySenderLast9 !== last9;
+                            
+                            if (isMe) {
+                                // Buscar el último mensaje optimista enviado por "me" que no tenga wamid ni id y coincida en texto
+                                const optIndex = [...prev].reverse().findIndex(m => m.sender === 'me' && !m.wamid && !m.id && m.text === body.messageText);
+                                if (optIndex !== -1) {
+                                    const realIndex = prev.length - 1 - optIndex;
+                                    const updated = [...prev];
+                                    updated[realIndex] = {
+                                        ...updated[realIndex],
+                                        id: body.id,
+                                        wamid: body.wamid,
+                                        status: body.status
+                                    };
+                                    return updated;
+                                }
+                            }
+
+                            // 3. De lo contrario, agregar el mensaje como nuevo
                             const newMsg = {
-                                sender: bodySenderLast9 === last9 ? 'contact' : 'me',
+                                id: body.id,
+                                wamid: body.wamid,
+                                sender: isMe ? 'me' : 'contact',
                                 text: body.messageText,
-                                time: timeStr
+                                time: timeStr,
+                                status: body.status
                             };
 
-                            // Evitar duplicación de mensajes enviados por mí
+                            // Evitar duplicación de mensajes idénticos al final
                             if (prev.length > 0) {
                                 const last = prev[prev.length - 1];
-                                if (last.text === newMsg.text && last.sender === newMsg.sender) {
+                                if (last.text === newMsg.text && last.sender === newMsg.sender && !newMsg.wamid && !newMsg.id) {
                                     return prev;
                                 }
                             }
@@ -178,7 +218,7 @@ const ViewContactBody = ({ setContactName }) => {
         }
     };
 
-    const handleSendImage = async (e) => {
+    const handleSendFile = async (e) => {
         const file = e.target.files[0];
         if (!file || !contact || !contact.telefonoPrincipal) return;
 
@@ -198,11 +238,26 @@ const ViewContactBody = ({ setContactName }) => {
                 const data = await uploadRes.json();
                 const localUrl = data.url; // "/uploads/filename.ext"
 
-                // 2. Enviar el mensaje estructurado de imagen
+                // Determinar el tipo de prefijo a enviar
+                let prefix = '[FILE]';
+                const fileType = file.type;
+                if (fileType.startsWith('image/')) {
+                    prefix = '[IMAGE]';
+                } else if (fileType.startsWith('audio/')) {
+                    prefix = '[AUDIO]';
+                } else if (fileType.startsWith('video/')) {
+                    prefix = '[VIDEO]';
+                } else if (fileType === 'application/pdf') {
+                    prefix = '[PDF]';
+                }
+
+                // 2. Enviar el mensaje estructurado
+                const textToSend = `${prefix}${localUrl}`;
+
                 // Agregar optimísticamente al chat local
                 const newMsg = {
                     sender: 'me',
-                    text: `[IMAGE]${localUrl}`,
+                    text: textToSend,
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 };
                 setWspMessages(prev => [...prev, newMsg]);
@@ -216,18 +271,18 @@ const ViewContactBody = ({ setContactName }) => {
                     body: JSON.stringify({
                         sender: 'system',
                         receiver: phone,
-                        messageText: `[IMAGE]${localUrl}`
+                        messageText: textToSend
                     })
                 });
 
                 if (!res.ok) {
-                    console.error("Error enviando mensaje de imagen al backend");
+                    console.error("Error enviando archivo al backend");
                 }
             } else {
-                console.error("Error al subir archivo de imagen al servidor local");
+                console.error("Error al subir archivo al servidor local");
             }
         } catch (err) {
-            console.error("Error de red al subir/enviar imagen:", err);
+            console.error("Error de red al subir/enviar archivo:", err);
         }
     };
 
@@ -1328,7 +1383,7 @@ const ViewContactBody = ({ setContactName }) => {
                 <Col lg={4} className="mb-4">
                     
                     {/* Card de Notas Internas y WhatsApp */}
-                    <Card className="border rounded shadow-sm mb-4" style={{ minHeight: '510px', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+                    <Card className="border rounded shadow-sm mb-4" style={{ minHeight: '642px', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
                         {/* Cabecera de pestañas */}
                         <div className="card-header bg-light p-2 border-bottom">
                             <ul className="nav nav-pills card-header-pills w-100 mx-0" style={{ fontSize: '0.78rem' }}>
@@ -1338,7 +1393,7 @@ const ViewContactBody = ({ setContactName }) => {
                                         style={{ cursor: 'pointer', borderRadius: '6px' }} 
                                         onClick={() => setRightTab('WhatsApp')}
                                     >
-                                        💬 WhatsApp
+                                        <i class="bi bi-whatsapp"></i> WhatsApp
                                     </span>
                                 </li>
                                 <li className="nav-item col-6 px-1 text-center">
@@ -1347,7 +1402,7 @@ const ViewContactBody = ({ setContactName }) => {
                                         style={{ cursor: 'pointer', borderRadius: '6px' }} 
                                         onClick={() => setRightTab('Notas')}
                                     >
-                                        📝 Notas Internas
+                                       <i class="bi bi-journal-text"></i> Notas Internas
                                     </span>
                                 </li>
                             </ul>
@@ -1362,7 +1417,7 @@ const ViewContactBody = ({ setContactName }) => {
                                 </div>
 
                                 {/* Área de mensajes del Chat */}
-                                <div className="p-3" style={{ height: '380px', overflowY: 'auto', backgroundColor: '#efeae2', backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")' }}>
+                                <div className="p-3" style={{ height: '500px', overflowY: 'auto', backgroundColor: '#efeae2', backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")' }}>
                                     <div className="d-flex flex-column gap-2">
                                         {wspMessages.map((msg, idx) => {
                                                                             const isImage = msg.text && msg.text.startsWith('[IMAGE]');
@@ -1419,7 +1474,25 @@ const ViewContactBody = ({ setContactName }) => {
                                                     {!isImage && !isAudio && !isVideo && (
                                                         <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</p>
                                                     )}
-                                                    <small className="text-muted d-block text-end" style={{ fontSize: '0.6rem' }}>{msg.time}</small>
+                                                    <div className="d-flex align-items-center justify-content-end gap-1" style={{ marginTop: '2px' }}>
+                                                        <small className="text-muted" style={{ fontSize: '0.6rem' }}>{msg.time}</small>
+                                                        {msg.sender === 'me' && (
+                                                            <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center' }}>
+                                                                {msg.status === 'READ' && (
+                                                                    <i className="bi bi-check2-all" style={{ color: '#53bdeb' }} title="Leído"></i>
+                                                                )}
+                                                                {msg.status === 'DELIVERED' && (
+                                                                    <i className="bi bi-check2-all text-muted" title="Entregado"></i>
+                                                                )}
+                                                                {(msg.status === 'SENT' || !msg.status) && (
+                                                                    <i className="bi bi-check2 text-muted" title="Enviado"></i>
+                                                                )}
+                                                                {msg.status === 'FAILED' && (
+                                                                    <i className="bi bi-exclamation-circle text-danger" title="Error al enviar"></i>
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             );
                                         })}
@@ -1427,26 +1500,39 @@ const ViewContactBody = ({ setContactName }) => {
                                     </div>
                                 </div>
 
+                                {showEmojiPicker && (
+                                    <div className="p-2 border-top bg-white d-flex gap-2 justify-content-center flex-wrap" style={{ fontSize: '1.2rem', borderBottom: '1px solid #cbd5e1' }}>
+                                        {['😀','😂','😊','😍','😉','👍','🙏','🔥','❤️','🎉','👏','💡','🚀','👀','⚠️'].map(emoji => (
+                                            <span 
+                                                key={emoji} 
+                                                style={{ cursor: 'pointer', userSelect: 'none' }}
+                                                onClick={() => {
+                                                    setWspInput(prev => prev + emoji);
+                                                    setShowEmojiPicker(false);
+                                                }}
+                                                className="emoji-item px-1"
+                                            >
+                                                {emoji}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {/* Entrada de mensaje */}
                                 <div className="p-2 border-top bg-light d-flex gap-2 align-items-center">
-                                    <input 
-                                        type="file" 
-                                        accept="image/*" 
-                                        id="wsp-image-upload" 
-                                        style={{ display: 'none' }} 
-                                        onChange={handleSendImage}
-                                    />
-                                    <label 
-                                        htmlFor="wsp-image-upload" 
-                                        className="btn btn-outline-secondary btn-sm rounded-circle d-flex align-items-center justify-content-center" 
-                                        style={{ width: '28px', height: '28px', padding: 0, cursor: 'pointer', borderColor: '#cbd5e1' }}
-                                        title="Enviar imagen"
+                                    <button 
+                                        type="button"
+                                        className="btn btn-link p-0 border-0 text-decoration-none"
+                                        style={{ fontSize: '1.3rem', cursor: 'pointer', outline: 'none' }}
+                                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                        title="Insertar emoticón"
                                     >
-                                        📷
-                                    </label>
+                                        😀
+                                    </button>
+
                                     <Form.Control 
                                         type="text" 
-                                        className="form-control-sm" 
+                                        className="form-control-sm flex-grow-1" 
                                         placeholder="Escribe un mensaje de WhatsApp..." 
                                         style={{ borderRadius: '20px', fontSize: '0.8rem', padding: '5px 12px', borderColor: '#cbd5e1' }} 
                                         value={wspInput}
@@ -1458,6 +1544,23 @@ const ViewContactBody = ({ setContactName }) => {
                                             }
                                         }}
                                     />
+
+                                    <input 
+                                         type="file" 
+                                         accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain" 
+                                         id="wsp-file-upload" 
+                                         style={{ display: 'none' }} 
+                                         onChange={handleSendFile}
+                                     />
+                                    <label 
+                                        htmlFor="wsp-file-upload" 
+                                        className="btn btn-link p-0 border-0 mb-0 d-flex align-items-center justify-content-center text-decoration-none" 
+                                        style={{ fontSize: '1.3rem', cursor: 'pointer' }}
+                                        title="Adjuntar archivo, imagen, audio o video"
+                                    >
+                                        <i class="bi bi-paperclip"></i>
+                                    </label>
+
                                     <Button 
                                         variant="success" 
                                         size="sm" 

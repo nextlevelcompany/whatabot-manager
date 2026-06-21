@@ -12,4 +12,6 @@ public interface WhatsAppMessageDao {
     List<WhatsAppMessage> findConversation(String phone);
     void updateStatus(Long id, String status);
     void delete(Long id);
+    Optional<WhatsAppMessage> findByWamid(String wamid);
+    void updateStatusByWamid(String wamid, String status);
 }

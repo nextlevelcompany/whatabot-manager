@@ -9,6 +9,7 @@ public class WhatsAppMessage {
     private String messageText;
     private LocalDateTime timestamp;
     private String status; // SENT, DELIVERED, READ, RECEIVED
+    private String wamid;
 
     public WhatsAppMessage() {}
 
@@ -19,6 +20,16 @@ public class WhatsAppMessage {
         this.messageText = messageText;
         this.timestamp = timestamp;
         this.status = status;
+    }
+
+    public WhatsAppMessage(Long id, String sender, String receiver, String messageText, LocalDateTime timestamp, String status, String wamid) {
+        this.id = id;
+        this.sender = sender;
+        this.receiver = receiver;
+        this.messageText = messageText;
+        this.timestamp = timestamp;
+        this.status = status;
+        this.wamid = wamid;
     }
 
     // Getters y Setters
@@ -68,5 +79,13 @@ public class WhatsAppMessage {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getWamid() {
+        return wamid;
+    }
+
+    public void setWamid(String wamid) {
+        this.wamid = wamid;
     }
 }

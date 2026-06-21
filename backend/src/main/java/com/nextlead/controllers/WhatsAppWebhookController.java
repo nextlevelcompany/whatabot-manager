@@ -193,7 +193,7 @@ public class WhatsAppWebhookController {
             // 2. Si la IA generó una respuesta y la clave de la API está configurada
             if (aiResponse != null && !aiResponse.trim().isEmpty()) {
                 // Enviar respuesta real vía WhatsApp (requiere el número completo con código de país)
-                boolean sent = apiService.sendMessage(clientPhone, aiResponse);
+                String wamid = apiService.sendMessage(clientPhone, aiResponse);
                 
                 // Guardar la respuesta de la IA en la Base de Datos
                 WhatsAppMessage aiMessage = new WhatsAppMessage();
@@ -201,7 +201,8 @@ public class WhatsAppWebhookController {
                 aiMessage.setReceiver(clientPhone); // El cliente recibe
                 aiMessage.setMessageText(aiResponse);
                 aiMessage.setTimestamp(LocalDateTime.now());
-                aiMessage.setStatus(sent ? "SENT" : "FAILED");
+                aiMessage.setStatus(wamid != null ? "SENT" : "FAILED");
+                aiMessage.setWamid(wamid);
                 
                 messageDao.save(aiMessage);
                 logger.info("Respuesta de la IA guardada y enviada a {} con estado: {}", clientPhone, aiMessage.getStatus());
@@ -222,9 +223,21 @@ public class WhatsAppWebhookController {
             for (JsonNode statusNode : statusesNode) {
                 String messageId = statusNode.has("id") ? statusNode.get("id").asText() : null;
                 String status = statusNode.has("status") ? statusNode.get("status").asText() : null;
-                String recipientId = statusNode.has("recipient_id") ? statusNode.get("recipient_id").asText() : null;
                 
-                logger.info("Notificación de estado: id={}, estado={}, destinatario={}", messageId, status, recipientId);
+                if (messageId != null && status != null) {
+                    String upperStatus = status.toUpperCase();
+                    // 1. Actualizar el estado en la base de datos
+                    messageDao.updateStatusByWamid(messageId, upperStatus);
+                    logger.info("Notificación de estado procesada: id={}, estado={}", messageId, upperStatus);
+
+                    // 2. Buscar el mensaje y transmitir la actualización en tiempo real por WebSocket
+                    messageDao.findByWamid(messageId).ifPresent(msg -> {
+                        String clientPhone = msg.getReceiver(); // El destinatario original del mensaje enviado
+                        String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+                        messagingTemplate.convertAndSend("/topic/chat/" + last9, msg);
+                        logger.info("Estado de mensaje transmitido vía WebSocket a /topic/chat/{}", last9);
+                    });
+                }
             }
         }
     }

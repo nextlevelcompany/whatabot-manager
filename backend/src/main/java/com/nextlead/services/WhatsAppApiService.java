@@ -30,12 +30,13 @@ public class WhatsAppApiService {
 
     /**
      * Envía un mensaje de texto al número especificado usando la API de nube de WhatsApp de Meta.
+     * Retorna el ID único del mensaje (wamid) o null si falla.
      */
-    public boolean sendMessage(String toPhone, String text) {
+    public String sendMessage(String toPhone, String text) {
         if (apiToken == null || apiToken.contains("YOUR_PERMANENT_WHATSAPP_API_TOKEN") 
             || phoneId == null || phoneId.contains("YOUR_WHATSAPP_PHONE_NUMBER_ID")) {
             logger.warn("Las credenciales de WhatsApp Meta API no están configuradas correctamente. Se omitirá el envío real.");
-            return false;
+            return null;
         }
 
         String url = String.format("https://graph.facebook.com/v18.0/%s/messages", phoneId);
@@ -59,18 +60,19 @@ public class WhatsAppApiService {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
             logger.info("Enviando WhatsApp a {} vía URL: {}", toPhone, url);
-            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, entity, JsonNode.class);
 
-            if (response.getStatusCode().is2xxSuccessful()) {
-                logger.info("Mensaje de WhatsApp enviado exitosamente a {}. Respuesta: {}", toPhone, response.getBody());
-                return true;
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                String wamid = response.getBody().path("messages").path(0).path("id").asText();
+                logger.info("Mensaje de WhatsApp enviado exitosamente a {}. Wamid: {}", toPhone, wamid);
+                return wamid;
             } else {
                 logger.error("Error al enviar mensaje. Código de estado: {}, Respuesta: {}", response.getStatusCode(), response.getBody());
-                return false;
+                return null;
             }
         } catch (Exception e) {
             logger.error("Excepción al intentar enviar WhatsApp a {}: {}", toPhone, e.getMessage(), e);
-            return false;
+            return null;
         }
     }
 
@@ -110,6 +112,56 @@ public class WhatsAppApiService {
         } catch (Exception e) {
             logger.error("Error al enviar imagen de WhatsApp a {}: {}", toPhone, e.getMessage(), e);
             return false;
+        }
+    }
+
+    /**
+     * Envía un mensaje multimedia (image, audio, video, document) usando el Media ID.
+     * Retorna el ID único del mensaje (wamid) o null si falla.
+     */
+    public String sendMediaMessage(String toPhone, String mediaId, String mediaType, String filename) {
+        if (apiToken == null || apiToken.contains("YOUR_PERMANENT_WHATSAPP_API_TOKEN") 
+            || phoneId == null || phoneId.contains("YOUR_WHATSAPP_PHONE_NUMBER_ID")) {
+            logger.warn("Las credenciales de Meta API no están configuradas. Se omitirá el envío.");
+            return null;
+        }
+
+        String url = String.format("https://graph.facebook.com/v18.0/%s/messages", phoneId);
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(apiToken);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("messaging_product", "whatsapp");
+            body.put("recipient_type", "individual");
+            body.put("to", toPhone);
+            body.put("type", mediaType);
+
+            Map<String, Object> mediaObj = new HashMap<>();
+            mediaObj.put("id", mediaId);
+            if ("document".equals(mediaType) && filename != null) {
+                mediaObj.put("filename", filename);
+            }
+            body.put(mediaType, mediaObj);
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            logger.info("Enviando mensaje de {} a {} con MediaID: {}", mediaType, toPhone, mediaId);
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, entity, JsonNode.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                String wamid = response.getBody().path("messages").path(0).path("id").asText();
+                logger.info("Mensaje de {} enviado exitosamente a {}. Wamid: {}", mediaType, toPhone, wamid);
+                return wamid;
+            } else {
+                logger.error("Error al enviar mensaje de {}. Código de estado: {}, Respuesta: {}", mediaType, response.getStatusCode(), response.getBody());
+                return null;
+            }
+        } catch (Exception e) {
+            logger.error("Error al enviar mensaje de {} a {}: {}", mediaType, toPhone, e.getMessage(), e);
+            return null;
         }
     }
 
