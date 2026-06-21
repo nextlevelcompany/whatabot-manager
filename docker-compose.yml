@@ -32,8 +32,15 @@ services:
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: nextlead_password
       SPRING_SQL_INIT_MODE: always
+      WHATSAPP_API_TOKEN: ${WHATSAPP_API_TOKEN}
+      WHATSAPP_PHONE_ID: ${WHATSAPP_PHONE_ID}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_DISPLAY_NUMBER: ${WHATSAPP_DISPLAY_NUMBER}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     ports:
       - "8080:8080"
+    volumes:
+      - nextlead_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,6 +79,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  nextlead_uploads:
     driver: local
 
 networks:

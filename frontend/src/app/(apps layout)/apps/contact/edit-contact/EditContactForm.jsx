@@ -131,7 +131,7 @@ const DireccionBlock = ({ index, direccion, onChange, onRemove, ubigeos }) => {
     return (
         <div className="direccion-block border rounded p-2 mb-2 position-relative" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' }}>
             <div className="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom">
-                <span className="fw-semibold text-primary" style={{ fontSize: '0.8rem' }}> <i class="bi bi-map-fill"></i> Dirección {index + 1}</span>
+                <span className="fw-semibold text-primary" style={{ fontSize: '0.8rem' }}> <i className="bi bi-map-fill"></i> Dirección {index + 1}</span>
                 <div className="d-flex gap-2 align-items-center">
                     <span 
                         onClick={() => setShowMap(!showMap)} 
@@ -499,7 +499,7 @@ const EditContactForm = () => {
                                             }}
                                             disabled={id && tipoPersona !== 'NATURAL'}
                                         >
-                                            <i class="bi bi-person-badge-fill"></i> Persona Natural
+                                            <i className="bi bi-person-badge-fill"></i> Persona Natural
                                         </Button>
                                         <Button
                                             variant={tipoPersona === 'EMPRESA' ? 'primary' : 'outline-secondary'}
@@ -512,7 +512,7 @@ const EditContactForm = () => {
                                             }}
                                             disabled={id && tipoPersona !== 'EMPRESA'}
                                         >
-                                            <i class="bi bi-building"></i> Empresa
+                                            <i className="bi bi-building"></i> Empresa
                                         </Button>
                                     </div>
                                 </Form.Group>
@@ -661,7 +661,7 @@ const EditContactForm = () => {
                                                 onClick={() => setActiveDirIndex(idx)}
                                                 style={{ fontSize: '0.72rem', padding: '4px 10px', borderRadius: '10px' }}
                                             >
-                                                <i class="bi bi-map-fill"></i> {dir.nombreUbicacion || `Dirección ${idx + 1}`}
+                                                <i className="bi bi-map-fill"></i> {dir.nombreUbicacion || `Dirección ${idx + 1}`}
                                             </Button>
                                         ))}
                                     </div>

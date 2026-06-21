@@ -74,6 +74,16 @@ public class WhatsAppMessageDaoImpl implements WhatsAppMessageDao {
     }
 
     @Override
+    public List<WhatsAppMessage> findConversation(String phone) {
+        // Normalizamos buscando por los últimos 9 dígitos (formato estándar peruano)
+        String last9 = phone.length() >= 9 ? phone.substring(phone.length() - 9) : phone;
+        String matchPattern = "%" + last9;
+        String sql = "SELECT id, sender, receiver, message_text, timestamp, status FROM whatsapp_messages " +
+                     "WHERE sender LIKE ? OR receiver LIKE ? ORDER BY timestamp ASC";
+        return jdbcTemplate.query(sql, rowMapper, matchPattern, matchPattern);
+    }
+
+    @Override
     public void updateStatus(Long id, String status) {
         String sql = "UPDATE whatsapp_messages SET status = ? WHERE id = ?";
         jdbcTemplate.update(sql, status, id);

@@ -9,6 +9,7 @@ public interface WhatsAppMessageDao {
     Optional<WhatsAppMessage> findById(Long id);
     List<WhatsAppMessage> findAll();
     List<WhatsAppMessage> findBySender(String sender);
+    List<WhatsAppMessage> findConversation(String phone);
     void updateStatus(Long id, String status);
     void delete(Long id);
 }

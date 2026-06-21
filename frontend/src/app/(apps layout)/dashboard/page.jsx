@@ -53,7 +53,7 @@ const Dashboard = () => {
                             <Nav.Item>
                                 <Nav.Link eventKey="overview" >
                                     <span className="nav-link-text">Overview</span>
-                                </Nav.Link>
+                                </Nav.Link>hazlo
                             </Nav.Item>
                             <Nav.Item>
                                 <Nav.Link eventKey="demo_nav_1">

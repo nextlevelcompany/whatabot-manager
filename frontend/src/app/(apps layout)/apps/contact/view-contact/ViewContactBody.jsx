@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Row, Col, Card, Badge, Spinner, Alert, Button, Form, Modal, Nav } from 'react-bootstrap';
 import { Mail, Phone, Calendar, Hash, Edit, Check, X, Plus, Trash, Eye, Search, MapPin, Link as LinkIcon } from 'react-feather';
@@ -24,35 +24,211 @@ const ViewContactBody = ({ setContactName }) => {
     const [activeTab, setActiveTab] = useState('Ubicaciones'); // 'Pedidos' | 'Oportunidades' | 'Envases' | 'Ubicaciones' | 'Personal'
     const [rightTab, setRightTab] = useState('WhatsApp'); // 'WhatsApp' | 'Notas'
 
-    // WhatsApp Chat State
-    const [wspMessages, setWspMessages] = useState([
-        { sender: 'contact', text: 'Hola, me gustaría recibir información sobre mi último pedido por favor.', time: '10:20 AM' },
-        { sender: 'me', text: 'Hola, claro que sí. Te confirmo que tu pedido ya salió de nuestro almacén.', time: '10:22 AM' },
-        { sender: 'contact', text: 'Excelente, muchas gracias por la respuesta. ¿Cuándo llegará?', time: '10:25 AM' }
-    ]);
-    const [wspInput, setWspInput] = useState('');
+    // Helper to clean phone numbers to digits only
+    const cleanPhoneNumber = (phone) => {
+        if (!phone) return '';
+        return phone.replace(/\D/g, '');
+    };
 
-    const sendWspMessage = () => {
-        if (!wspInput.trim()) return;
+    // WhatsApp Chat State
+    const [wspMessages, setWspMessages] = useState([]);
+    const [wspInput, setWspInput] = useState('');
+    const chatEndRef = useRef(null);
+
+    // Auto-scroll to bottom of chat
+    const scrollToBottom = () => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [wspMessages]);
+
+    // Load WhatsApp conversation history when contact loads
+    useEffect(() => {
+        if (!contact || !contact.telefonoPrincipal) return;
+        const phone = cleanPhoneNumber(contact.telefonoPrincipal);
+        const contactLast9 = phone.length >= 9 ? phone.substring(phone.length - 9) : phone;
+        
+        const fetchConversation = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/messages/conversation/${phone}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const formatted = data.map(msg => {
+                        const msgSenderLast9 = msg.sender.length >= 9 ? msg.sender.substring(msg.sender.length - 9) : msg.sender;
+                        return {
+                            sender: msgSenderLast9 === contactLast9 ? 'contact' : 'me',
+                            text: msg.messageText,
+                            time: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        };
+                    });
+                    setWspMessages(formatted);
+                }
+            } catch (err) {
+                console.error("Error cargando historial de WhatsApp:", err);
+            }
+        };
+
+        fetchConversation();
+    }, [contact]);
+
+    // WebSocket real-time subscription for WhatsApp messages
+    useEffect(() => {
+        if (!contact || !contact.telefonoPrincipal) return;
+        const phone = cleanPhoneNumber(contact.telefonoPrincipal);
+        const last9 = phone.length >= 9 ? phone.substring(phone.length - 9) : phone;
+
+        // Dynamic SSR-safe require of SockJS and STOMP
+        let stompClient = null;
+        try {
+            const SockJS = require('sockjs-client');
+            const { Client } = require('@stomp/stompjs');
+
+            stompClient = new Client({
+                webSocketFactory: () => new SockJS(`${API_BASE}/ws-message`),
+                debug: (str) => {
+                    console.log('STOMP Debug:', str);
+                },
+                reconnectDelay: 5000,
+                heartbeatIncoming: 4000,
+                heartbeatOutgoing: 4000,
+            });
+
+            stompClient.onConnect = (frame) => {
+                console.log('WebSocket de WhatsApp conectado para el teléfono (últimos 9 dígitos):', last9);
+                stompClient.subscribe(`/topic/chat/${last9}`, (message) => {
+                    try {
+                        const body = JSON.parse(message.body);
+                        const timeStr = new Date(body.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        
+                        setWspMessages(prev => {
+                            const bodySenderLast9 = body.sender.length >= 9 ? body.sender.substring(body.sender.length - 9) : body.sender;
+                            const newMsg = {
+                                sender: bodySenderLast9 === last9 ? 'contact' : 'me',
+                                text: body.messageText,
+                                time: timeStr
+                            };
+
+                            // Evitar duplicación de mensajes enviados por mí
+                            if (prev.length > 0) {
+                                const last = prev[prev.length - 1];
+                                if (last.text === newMsg.text && last.sender === newMsg.sender) {
+                                    return prev;
+                                }
+                            }
+                            return [...prev, newMsg];
+                        });
+                    } catch (e) {
+                        console.error("Error al procesar mensaje de WebSocket:", e);
+                    }
+                });
+            };
+
+            stompClient.onStompError = (frame) => {
+                console.error('Error del broker STOMP:', frame.headers['message'], frame.body);
+            };
+
+            stompClient.activate();
+        } catch (e) {
+            console.error("Error configurando WebSocket client:", e);
+        }
+
+        return () => {
+            if (stompClient) {
+                stompClient.deactivate();
+                console.log('WebSocket de WhatsApp desactivado para el teléfono (últimos 9 dígitos):', last9);
+            }
+        };
+    }, [contact]);
+
+    const sendWspMessage = async () => {
+        if (!wspInput.trim() || !contact || !contact.telefonoPrincipal) return;
+        
+        const phone = cleanPhoneNumber(contact.telefonoPrincipal);
+        const textToSend = wspInput;
+        setWspInput('');
+
+        // Agregar optimísticamente al chat local
         const newMsg = {
             sender: 'me',
-            text: wspInput,
+            text: textToSend,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
         setWspMessages(prev => [...prev, newMsg]);
-        setWspInput('');
+
+        try {
+            const res = await fetch(`${API_BASE}/api/messages`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sender: 'system', // Remitente por defecto
+                    receiver: phone,
+                    messageText: textToSend
+                })
+            });
+
+            if (!res.ok) {
+                console.error("Error enviando mensaje al backend");
+            }
+        } catch (err) {
+            console.error("Error de red enviando mensaje:", err);
+        }
+    };
+
+    const handleSendImage = async (e) => {
+        const file = e.target.files[0];
+        if (!file || !contact || !contact.telefonoPrincipal) return;
+
+        const phone = cleanPhoneNumber(contact.telefonoPrincipal);
         
-        // Simular respuesta automática después de 1.5 segundos
-        setTimeout(() => {
-            setWspMessages(prev => [
-                ...prev,
-                {
-                    sender: 'contact',
-                    text: '¡Entendido! Quedo a la espera de la entrega. Muchas gracias.',
+        // 1. Subir el archivo al servidor local CRM
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+            const uploadRes = await fetch(`${API_BASE}/api/messages/upload`, {
+                method: "POST",
+                body: formData
+            });
+
+            if (uploadRes.ok) {
+                const data = await uploadRes.json();
+                const localUrl = data.url; // "/uploads/filename.ext"
+
+                // 2. Enviar el mensaje estructurado de imagen
+                // Agregar optimísticamente al chat local
+                const newMsg = {
+                    sender: 'me',
+                    text: `[IMAGE]${localUrl}`,
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                };
+                setWspMessages(prev => [...prev, newMsg]);
+
+                // Llamar al endpoint del backend para mandar y persistir
+                const res = await fetch(`${API_BASE}/api/messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sender: 'system',
+                        receiver: phone,
+                        messageText: `[IMAGE]${localUrl}`
+                    })
+                });
+
+                if (!res.ok) {
+                    console.error("Error enviando mensaje de imagen al backend");
                 }
-            ]);
-        }, 1500);
+            } else {
+                console.error("Error al subir archivo de imagen al servidor local");
+            }
+        } catch (err) {
+            console.error("Error de red al subir/enviar imagen:", err);
+        }
     };
 
     // Block Edit States
@@ -1188,26 +1364,86 @@ const ViewContactBody = ({ setContactName }) => {
                                 {/* Área de mensajes del Chat */}
                                 <div className="p-3" style={{ height: '380px', overflowY: 'auto', backgroundColor: '#efeae2', backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")' }}>
                                     <div className="d-flex flex-column gap-2">
-                                        {wspMessages.map((msg, idx) => (
-                                            <div 
-                                                key={idx} 
-                                                className={`p-2 rounded shadow-sm ${msg.sender === 'me' ? 'align-self-end text-success-emphasis' : 'align-self-start'}`} 
-                                                style={{ 
-                                                    maxWidth: '85%', 
-                                                    fontSize: '0.82rem', 
-                                                    backgroundColor: msg.sender === 'me' ? '#d9fdd3' : '#ffffff',
-                                                    border: msg.sender === 'me' ? 'none' : '1px solid #cbd5e1'
-                                                }}
-                                            >
-                                                <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</p>
-                                                <small className="text-muted d-block text-end" style={{ fontSize: '0.6rem' }}>{msg.time}</small>
-                                            </div>
-                                        ))}
+                                        {wspMessages.map((msg, idx) => {
+                                                                            const isImage = msg.text && msg.text.startsWith('[IMAGE]');
+                                            const isAudio = msg.text && msg.text.startsWith('[AUDIO]');
+                                            const isVideo = msg.text && msg.text.startsWith('[VIDEO]');
+                                            let mediaUrl = '';
+                                            if (isImage || isAudio || isVideo) {
+                                                const path = msg.text.substring(7);
+                                                mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
+                                            }
+
+                                            return (
+                                                <div 
+                                                    key={idx} 
+                                                    className={`p-2 rounded shadow-sm ${msg.sender === 'me' ? 'align-self-end text-success-emphasis' : 'align-self-start'}`} 
+                                                    style={{ 
+                                                        maxWidth: '85%', 
+                                                        fontSize: '0.82rem', 
+                                                        backgroundColor: msg.sender === 'me' ? '#d9fdd3' : '#ffffff',
+                                                        border: msg.sender === 'me' ? 'none' : '1px solid #cbd5e1'
+                                                    }}
+                                                >
+                                                    {isImage && (
+                                                        <div className="d-flex flex-column">
+                                                            <img 
+                                                                src={mediaUrl} 
+                                                                alt="WhatsApp Imagen" 
+                                                                className="img-fluid rounded mb-1 border" 
+                                                                style={{ maxHeight: '160px', objectFit: 'contain', cursor: 'pointer', backgroundColor: '#f1f5f9' }}
+                                                                onClick={() => window.open(mediaUrl, '_blank')}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    {isAudio && (
+                                                        <div className="d-flex flex-column py-1">
+                                                            <audio 
+                                                                src={mediaUrl} 
+                                                                controls 
+                                                                className="w-100" 
+                                                                style={{ minWidth: '220px', height: '40px' }}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    {isVideo && (
+                                                        <div className="d-flex flex-column">
+                                                            <video 
+                                                                src={mediaUrl} 
+                                                                controls 
+                                                                className="img-fluid rounded mb-1 border" 
+                                                                style={{ maxHeight: '240px', backgroundColor: '#000000' }}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    {!isImage && !isAudio && !isVideo && (
+                                                        <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</p>
+                                                    )}
+                                                    <small className="text-muted d-block text-end" style={{ fontSize: '0.6rem' }}>{msg.time}</small>
+                                                </div>
+                                            );
+                                        })}
+                                        <div ref={chatEndRef} />
                                     </div>
                                 </div>
 
                                 {/* Entrada de mensaje */}
                                 <div className="p-2 border-top bg-light d-flex gap-2 align-items-center">
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        id="wsp-image-upload" 
+                                        style={{ display: 'none' }} 
+                                        onChange={handleSendImage}
+                                    />
+                                    <label 
+                                        htmlFor="wsp-image-upload" 
+                                        className="btn btn-outline-secondary btn-sm rounded-circle d-flex align-items-center justify-content-center" 
+                                        style={{ width: '28px', height: '28px', padding: 0, cursor: 'pointer', borderColor: '#cbd5e1' }}
+                                        title="Enviar imagen"
+                                    >
+                                        📷
+                                    </label>
                                     <Form.Control 
                                         type="text" 
                                         className="form-control-sm" 
