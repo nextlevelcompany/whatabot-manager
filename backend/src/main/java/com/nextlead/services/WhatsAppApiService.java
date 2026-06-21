@@ -3,7 +3,7 @@ package com.nextlead.services;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -20,19 +20,30 @@ public class WhatsAppApiService {
 
     private static final Logger logger = LoggerFactory.getLogger(WhatsAppApiService.class);
 
-    @Value("${whatsapp.api.token}")
-    private String apiToken;
-
-    @Value("${whatsapp.phone.id}")
-    private String phoneId;
-
+    private final SettingsService settingsService;
     private final RestTemplate restTemplate = new RestTemplate();
+
+    @Autowired
+    public WhatsAppApiService(SettingsService settingsService) {
+        this.settingsService = settingsService;
+    }
+
+    private String getApiToken() {
+        return settingsService.getSetting("whatsapp.api.token");
+    }
+
+    private String getPhoneId() {
+        return settingsService.getSetting("whatsapp.phone.id");
+    }
 
     /**
      * Envía un mensaje de texto al número especificado usando la API de nube de WhatsApp de Meta.
      * Retorna el ID único del mensaje (wamid) o null si falla.
      */
     public String sendMessage(String toPhone, String text) {
+        String apiToken = getApiToken();
+        String phoneId = getPhoneId();
+
         if (apiToken == null || apiToken.contains("YOUR_PERMANENT_WHATSAPP_API_TOKEN") 
             || phoneId == null || phoneId.contains("YOUR_WHATSAPP_PHONE_NUMBER_ID")) {
             logger.warn("Las credenciales de WhatsApp Meta API no están configuradas correctamente. Se omitirá el envío real.");
@@ -80,6 +91,9 @@ public class WhatsAppApiService {
      * Envía un mensaje multimedia de tipo imagen usando el identificador de contenido (Media ID) de Meta.
      */
     public boolean sendImageMessage(String toPhone, String mediaId) {
+        String apiToken = getApiToken();
+        String phoneId = getPhoneId();
+
         if (apiToken == null || apiToken.contains("YOUR_PERMANENT_WHATSAPP_API_TOKEN") 
             || phoneId == null || phoneId.contains("YOUR_WHATSAPP_PHONE_NUMBER_ID")) {
             logger.warn("Las credenciales de WhatsApp Meta API no están configuradas. Se omitirá el envío de imagen.");
@@ -120,6 +134,9 @@ public class WhatsAppApiService {
      * Retorna el ID único del mensaje (wamid) o null si falla.
      */
     public String sendMediaMessage(String toPhone, String mediaId, String mediaType, String filename) {
+        String apiToken = getApiToken();
+        String phoneId = getPhoneId();
+
         if (apiToken == null || apiToken.contains("YOUR_PERMANENT_WHATSAPP_API_TOKEN") 
             || phoneId == null || phoneId.contains("YOUR_WHATSAPP_PHONE_NUMBER_ID")) {
             logger.warn("Las credenciales de Meta API no están configuradas. Se omitirá el envío.");
@@ -169,6 +186,9 @@ public class WhatsAppApiService {
      * Sube un archivo multimedia a los servidores de Meta y obtiene su Media ID único.
      */
     public String uploadMedia(byte[] fileBytes, String filename, String mimeType) {
+        String apiToken = getApiToken();
+        String phoneId = getPhoneId();
+
         if (apiToken == null || apiToken.contains("YOUR_PERMANENT_WHATSAPP_API_TOKEN") 
             || phoneId == null || phoneId.contains("YOUR_WHATSAPP_PHONE_NUMBER_ID")) {
             logger.warn("Las credenciales de WhatsApp Meta API no están configuradas. Se omitirá la subida de multimedia.");
@@ -221,6 +241,8 @@ public class WhatsAppApiService {
      * Retorna la ruta relativa local (ejemplo: "/uploads/filename.jpg") o null si falla.
      */
     public String downloadMedia(String mediaId, String mimeType) {
+        String apiToken = getApiToken();
+
         if (apiToken == null || apiToken.contains("YOUR_PERMANENT_WHATSAPP_API_TOKEN")) {
             logger.warn("Las credenciales de WhatsApp Meta API no están configuradas. Se omitirá la descarga.");
             return null;

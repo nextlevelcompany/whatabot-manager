@@ -5,10 +5,10 @@ import com.nextlead.dao.WhatsAppMessageDao;
 import com.nextlead.models.WhatsAppMessage;
 import com.nextlead.services.GeminiService;
 import com.nextlead.services.WhatsAppApiService;
+import com.nextlead.services.SettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -25,12 +25,7 @@ public class WhatsAppWebhookController {
 
     private static final Logger logger = LoggerFactory.getLogger(WhatsAppWebhookController.class);
 
-    @Value("${whatsapp.verify.token}")
-    private String verifyToken;
-
-    @Value("${whatsapp.display.number}")
-    private String displayPhoneNumber;
-
+    private final SettingsService settingsService;
     private final WhatsAppMessageDao messageDao;
     private final SimpMessagingTemplate messagingTemplate;
     private final WhatsAppApiService apiService;
@@ -40,11 +35,21 @@ public class WhatsAppWebhookController {
     public WhatsAppWebhookController(WhatsAppMessageDao messageDao, 
                                      SimpMessagingTemplate messagingTemplate,
                                      WhatsAppApiService apiService,
-                                     GeminiService geminiService) {
+                                     GeminiService geminiService,
+                                     SettingsService settingsService) {
         this.messageDao = messageDao;
         this.messagingTemplate = messagingTemplate;
         this.apiService = apiService;
         this.geminiService = geminiService;
+        this.settingsService = settingsService;
+    }
+
+    private String getVerifyToken() {
+        return settingsService.getSetting("whatsapp.verify.token");
+    }
+
+    private String getDisplayPhoneNumber() {
+        return settingsService.getSetting("whatsapp.display.number");
     }
 
     /**
@@ -58,7 +63,8 @@ public class WhatsAppWebhookController {
 
         logger.info("Petición de verificación del webhook de WhatsApp recibida: mode={}, token={}, challenge={}", mode, token, challenge);
 
-        if ("subscribe".equals(mode) && verifyToken.equals(token)) {
+        String verifyToken = getVerifyToken();
+        if ("subscribe".equals(mode) && verifyToken != null && verifyToken.equals(token)) {
             logger.info("Verificación de webhook de WhatsApp EXITOSA");
             return ResponseEntity.ok(challenge);
         } else {
@@ -108,7 +114,7 @@ public class WhatsAppWebhookController {
             JsonNode metadataNode = valueNode.get("metadata");
             String ourNumber = (metadataNode != null && metadataNode.has("display_phone_number")) 
                     ? metadataNode.get("display_phone_number").asText() 
-                    : displayPhoneNumber;
+                    : getDisplayPhoneNumber();
 
             for (JsonNode messageNode : messagesNode) {
                 String type = messageNode.has("type") ? messageNode.get("type").asText() : "";

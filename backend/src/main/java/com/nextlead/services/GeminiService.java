@@ -3,7 +3,7 @@ package com.nextlead.services;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -19,10 +19,17 @@ public class GeminiService {
 
     private static final Logger logger = LoggerFactory.getLogger(GeminiService.class);
 
-    @Value("${gemini.api.key}")
-    private String apiKey;
-
+    private final SettingsService settingsService;
     private final RestTemplate restTemplate = new RestTemplate();
+
+    @Autowired
+    public GeminiService(SettingsService settingsService) {
+        this.settingsService = settingsService;
+    }
+
+    private String getApiKey() {
+        return settingsService.getSetting("gemini.api.key");
+    }
 
     /**
      * Genera una respuesta automática basada en el mensaje del cliente usando Gemini 1.5 Flash.
@@ -31,6 +38,8 @@ public class GeminiService {
      * @return Respuesta generada por la IA.
      */
     public String generateResponse(String userMessage) {
+        String apiKey = getApiKey();
+
         if (apiKey == null || apiKey.contains("AIzaSyCP-Zl8liO4zwQaP0pP-VPPI0bn_5hxT00")) {
             logger.warn("La API Key de Google Gemini no está configurada. Se omitirá la respuesta de la IA.");
             return null;

@@ -84,3 +84,10 @@ CREATE TABLE IF NOT EXISTS direcciones (
 -- Asegurar columna empresa_id si la tabla ya existía sin ella
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS empresa_id BIGINT REFERENCES contacts(id) ON DELETE SET NULL;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS referencia VARCHAR(250);
+
+-- Tabla para almacenar configuraciones dinámicas de la aplicación (como credenciales de Meta y Gemini)
+CREATE TABLE IF NOT EXISTS system_settings (
+    key_name VARCHAR(100) PRIMARY KEY,
+    value_text TEXT NOT NULL
+);
+
