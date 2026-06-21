@@ -112,8 +112,8 @@ export const SidebarMenu = [
                         path: '/productos/view',
                     },
                     {
-                        name: 'Crear Productos',
-                        path: '/productos/create',
+                        name: 'Categorías',
+                        path: '/productos/categorias',
                     }
                 ]
             },
