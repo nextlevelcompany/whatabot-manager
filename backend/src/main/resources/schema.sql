@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     email                VARCHAR(100),
     empresa_id           BIGINT       REFERENCES contacts(id) ON DELETE SET NULL,
     starred              BOOLEAN      DEFAULT FALSE,
+    ai_active            BOOLEAN      DEFAULT FALSE,
     date_created         TIMESTAMP    DEFAULT NOW()
 );
 
@@ -90,4 +91,6 @@ CREATE TABLE IF NOT EXISTS system_settings (
     key_name VARCHAR(100) PRIMARY KEY,
     value_text TEXT NOT NULL
 );
+
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_active BOOLEAN DEFAULT FALSE;
 

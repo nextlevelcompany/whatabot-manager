@@ -182,6 +182,24 @@ const ViewContactBody = ({ setContactName }) => {
         };
     }, [contact]);
 
+    const handleToggleAI = async () => {
+        if (!contact || !contact.id) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/contacts/${contact.id}/toggle-ai`, {
+                method: 'PUT'
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setContact(prev => ({
+                    ...prev,
+                    aiActive: data.aiActive
+                }));
+            }
+        } catch (err) {
+            console.error("Error toggling AI response:", err);
+        }
+    };
+
     const sendWspMessage = async () => {
         if (!wspInput.trim() || !contact || !contact.telefonoPrincipal) return;
         
@@ -1412,8 +1430,28 @@ const ViewContactBody = ({ setContactName }) => {
                         {rightTab === 'WhatsApp' && (
                             <div className="d-flex flex-column h-100 overflow-hidden" style={{ borderRadius: '0 0 12px 12px' }}>
                                 <div className="p-2 border-bottom d-flex align-items-center justify-content-between bg-success-subtle text-success-emphasis" style={{ fontSize: '0.78rem' }}>
-                                    <span>📞 +51 {contact && contact.telefonoPrincipal ? contact.telefonoPrincipal : '---'}</span>
-                                    <span className="fw-bold text-success">● En Línea</span>
+                                    <div className="d-flex align-items-center gap-2">
+                                        <span>📞 +51 {contact && contact.telefonoPrincipal ? contact.telefonoPrincipal : '---'}</span>
+                                        <span className="fw-bold text-success">● En Línea</span>
+                                    </div>
+                                    <div className="d-flex align-items-center gap-2">
+                                        <span className="fw-semibold text-muted">Responder:</span>
+                                        <button 
+                                            onClick={handleToggleAI}
+                                            className={`btn btn-xs ${contact && contact.aiActive ? 'btn-primary' : 'btn-outline-secondary'} d-flex align-items-center gap-1`}
+                                            style={{ fontSize: '0.7rem', padding: '1px 8px', borderRadius: '20px' }}
+                                        >
+                                            {contact && contact.aiActive ? (
+                                                <>
+                                                    <i className="bi bi-cpu-fill"></i> IA
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <i className="bi bi-person-fill"></i> Manual
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Área de mensajes del Chat */}

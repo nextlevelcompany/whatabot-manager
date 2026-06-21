@@ -297,6 +297,16 @@ public class ContactController {
         return ResponseEntity.ok(java.util.Map.of("starred", newStarred));
     }
 
+    // PUT /api/contacts/{id}/toggle-ai — Alternar respuestas automáticas por IA
+    @PutMapping("/{id}/toggle-ai")
+    public ResponseEntity<?> toggleAi(@PathVariable Long id) {
+        Optional<Contact> opt = contactDao.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+        boolean newAiActive = !Boolean.TRUE.equals(opt.get().getAiActive());
+        contactDao.updateAiActive(id, newAiActive);
+        return ResponseEntity.ok(java.util.Map.of("aiActive", newAiActive));
+    }
+
     // PUT /api/contacts/{id}/link-empresa — Vincular/desvincular persona a empresa
     @PutMapping("/{id}/link-empresa")
     public ResponseEntity<?> linkEmpresa(@PathVariable Long id, @RequestParam(required = false) Long empresaId) {

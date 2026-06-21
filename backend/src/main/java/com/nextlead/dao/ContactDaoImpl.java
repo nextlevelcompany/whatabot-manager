@@ -50,6 +50,7 @@ public class ContactDaoImpl implements ContactDao {
         // empresa_nombre puede estar presente en JOINs
         try { c.setEmpresaNombre(rs.getString("empresa_nombre")); } catch (SQLException ignored) {}
         c.setStarred(rs.getBoolean("starred"));
+        c.setAiActive(rs.getBoolean("ai_active"));
         c.setReferencia(rs.getString("referencia"));
         Timestamp ts = rs.getTimestamp("date_created");
         if (ts != null) c.setDateCreated(ts.toLocalDateTime());
@@ -130,8 +131,8 @@ public class ContactDaoImpl implements ContactDao {
         String sql = """
             INSERT INTO contacts
               (tipo_persona, tipo_documento, numero_documento, nombres, apellidos,
-               razon_social, telefono_principal, telefono_secundario, email, empresa_id, starred, referencia)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               razon_social, telefono_principal, telefono_secundario, email, empresa_id, starred, ai_active, referencia)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
@@ -151,7 +152,8 @@ public class ContactDaoImpl implements ContactDao {
                 ps.setNull(10, java.sql.Types.BIGINT);
             }
             ps.setBoolean(11, contact.getStarred() != null ? contact.getStarred() : false);
-            ps.setString(12, contact.getReferencia());
+            ps.setBoolean(12, contact.getAiActive() != null ? contact.getAiActive() : false);
+            ps.setString(13, contact.getReferencia());
             return ps;
         }, keyHolder);
 
@@ -193,7 +195,7 @@ public class ContactDaoImpl implements ContactDao {
         String sql = """
             UPDATE contacts SET
               tipo_persona = ?, tipo_documento = ?, numero_documento = ?, nombres = ?, apellidos = ?,
-              razon_social = ?, telefono_principal = ?, telefono_secundario = ?, email = ?, empresa_id = ?, referencia = ?
+              razon_social = ?, telefono_principal = ?, telefono_secundario = ?, email = ?, empresa_id = ?, ai_active = ?, referencia = ?
             WHERE id = ?
             """;
         jdbcTemplate.update(sql,
@@ -207,6 +209,7 @@ public class ContactDaoImpl implements ContactDao {
             contact.getTelefonoSecundario(),
             contact.getEmail(),
             contact.getEmpresaId(),
+            contact.getAiActive(),
             contact.getReferencia(),
             contact.getId()
         );
@@ -263,5 +266,37 @@ public class ContactDaoImpl implements ContactDao {
     public long count() {
         Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM contacts", Long.class);
         return count != null ? count : 0;
+    }
+
+    @Override
+    public void updateAiActive(Long id, boolean aiActive) {
+        jdbcTemplate.update("UPDATE contacts SET ai_active = ? WHERE id = ?", aiActive, id);
+    }
+
+    @Override
+    public Optional<Contact> findByPhone(String phone) {
+        if (phone == null || phone.isEmpty()) return Optional.empty();
+        String cleanPhone = phone.replaceAll("\\D", "");
+        String last9 = cleanPhone.length() >= 9 ? cleanPhone.substring(cleanPhone.length() - 9) : cleanPhone;
+        String matchPattern = "%" + last9;
+        
+        String sql = """
+            SELECT c.*, e.razon_social AS empresa_nombre
+            FROM contacts c
+            LEFT JOIN contacts e ON c.empresa_id = e.id
+            WHERE c.telefono_principal LIKE ? OR c.telefono_secundario LIKE ?
+            LIMIT 1
+            """;
+        try {
+            List<Contact> list = jdbcTemplate.query(sql, contactRowMapper, matchPattern, matchPattern);
+            if (list.isEmpty()) {
+                return Optional.empty();
+            }
+            Contact contact = list.get(0);
+            contact.setDirecciones(findAddressesByContactId(contact.getId()));
+            return Optional.of(contact);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
     }
 }

@@ -20,7 +20,8 @@ export default function ConfigPage() {
         'whatsapp.phone.id': '',
         'whatsapp.verify.token': '',
         'whatsapp.display.number': '',
-        'gemini.api.key': ''
+        'gemini.api.key': '',
+        'gemini.system.prompt': ''
     });
 
     const [loading, setLoading] = useState(true);
@@ -40,7 +41,8 @@ export default function ConfigPage() {
                         'whatsapp.phone.id': data['whatsapp.phone.id'] || '',
                         'whatsapp.verify.token': data['whatsapp.verify.token'] || '',
                         'whatsapp.display.number': data['whatsapp.display.number'] || '',
-                        'gemini.api.key': data['gemini.api.key'] || ''
+                        'gemini.api.key': data['gemini.api.key'] || '',
+                        'gemini.system.prompt': data['gemini.system.prompt'] || ''
                     });
                 } else {
                     setAlert({ show: true, type: 'danger', message: 'No se pudieron cargar las configuraciones del servidor.' });
@@ -254,6 +256,22 @@ export default function ConfigPage() {
                                         </InputGroup>
                                         <Form.Text className="text-muted small">
                                             Obtén tu API Key gratuita o de pago desde Google AI Studio (generativelanguage.googleapis.com).
+                                        </Form.Text>
+                                    </Form.Group>
+
+                                    <Form.Group className="mb-3" controlId="geminiPrompt">
+                                        <Form.Label className="fw-semibold small">Instrucciones del Agente (System Prompt)</Form.Label>
+                                        <Form.Control
+                                            as="textarea"
+                                            rows={6}
+                                            name="gemini.system.prompt"
+                                            value={settings['gemini.system.prompt']}
+                                            onChange={handleChange}
+                                            placeholder="Escribe las instrucciones de comportamiento de la IA..."
+                                            style={{ fontSize: '0.88rem', lineHeight: '1.4', borderRadius: '8px' }}
+                                        />
+                                        <Form.Text className="text-muted small">
+                                            Define el rol, tono y reglas que el agente de inteligencia artificial debe seguir para responder a los contactos.
                                         </Form.Text>
                                     </Form.Group>
                                 </div>

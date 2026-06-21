@@ -28,6 +28,13 @@ public class SettingsService {
     @Value("${gemini.api.key}")
     private String fallbackGeminiApiKey;
 
+    private static final String DEFAULT_GEMINI_SYSTEM_PROMPT = 
+        "Eres un asistente virtual automatizado para NextLead CRM. " +
+        "Responde de manera muy concisa, amable, directa y en español a las consultas de los clientes. " +
+        "Si el usuario pregunta por precios, horarios u ofertas simples, respóndele amablemente. " +
+        "Si el usuario hace preguntas muy complejas, técnicas o solicita asistencia humana directa, " +
+        "indícale amablemente que has derivado su caso con un asesor especializado de nuestro equipo.";
+
     @Autowired
     public SettingsService(SystemSettingsDao settingsDao) {
         this.settingsDao = settingsDao;
@@ -48,6 +55,7 @@ public class SettingsService {
         settings.put("whatsapp.verify.token", getSetting("whatsapp.verify.token"));
         settings.put("whatsapp.display.number", getSetting("whatsapp.display.number"));
         settings.put("gemini.api.key", getSetting("gemini.api.key"));
+        settings.put("gemini.system.prompt", getSetting("gemini.system.prompt"));
         return settings;
     }
 
@@ -63,6 +71,8 @@ public class SettingsService {
                 return fallbackDisplayNumber;
             case "gemini.api.key":
                 return fallbackGeminiApiKey;
+            case "gemini.system.prompt":
+                return DEFAULT_GEMINI_SYSTEM_PROMPT;
             default:
                 return null;
         }

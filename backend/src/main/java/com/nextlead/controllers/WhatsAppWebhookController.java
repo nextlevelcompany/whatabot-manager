@@ -2,7 +2,9 @@ package com.nextlead.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nextlead.dao.WhatsAppMessageDao;
+import com.nextlead.dao.ContactDao;
 import com.nextlead.models.WhatsAppMessage;
+import com.nextlead.models.Contact;
 import com.nextlead.services.GeminiService;
 import com.nextlead.services.WhatsAppApiService;
 import com.nextlead.services.SettingsService;
@@ -27,6 +29,7 @@ public class WhatsAppWebhookController {
 
     private final SettingsService settingsService;
     private final WhatsAppMessageDao messageDao;
+    private final ContactDao contactDao;
     private final SimpMessagingTemplate messagingTemplate;
     private final WhatsAppApiService apiService;
     private final GeminiService geminiService;
@@ -36,12 +39,14 @@ public class WhatsAppWebhookController {
                                      SimpMessagingTemplate messagingTemplate,
                                      WhatsAppApiService apiService,
                                      GeminiService geminiService,
-                                     SettingsService settingsService) {
+                                     SettingsService settingsService,
+                                     ContactDao contactDao) {
         this.messageDao = messageDao;
         this.messagingTemplate = messagingTemplate;
         this.apiService = apiService;
         this.geminiService = geminiService;
         this.settingsService = settingsService;
+        this.contactDao = contactDao;
     }
 
     private String getVerifyToken() {
@@ -170,15 +175,24 @@ public class WhatsAppWebhookController {
                         messagingTemplate.convertAndSend(destination, message);
                         logger.info("Mensaje transmitido en tiempo real vía WebSocket a {}", destination);
 
-                        // Responder asíncronamente con la Inteligencia Artificial de Gemini (solo para textos, no imágenes)
+                        // Responder asíncronamente con la Inteligencia Artificial de Gemini (solo para textos, no imágenes y si el cliente tiene la IA activa)
                         if ("text".equals(type)) {
-                            final String cleanFromPhone = fromPhone;
-                            final String cleanTextBody = textBody;
-                            final String cleanOurNumber = ourNumber;
-                            
-                            CompletableFuture.runAsync(() -> {
-                                respondWithAI(cleanFromPhone, cleanTextBody, cleanOurNumber);
-                            });
+                            // Validar si el contacto tiene activada la respuesta por IA
+                            boolean isAiActiveForContact = contactDao.findByPhone(fromPhone)
+                                    .map(Contact::getAiActive)
+                                    .orElse(false);
+
+                            if (isAiActiveForContact) {
+                                final String cleanFromPhone = fromPhone;
+                                final String cleanTextBody = textBody;
+                                final String cleanOurNumber = ourNumber;
+                                
+                                CompletableFuture.runAsync(() -> {
+                                    respondWithAI(cleanFromPhone, cleanTextBody, cleanOurNumber);
+                                });
+                            } else {
+                                logger.info("Respuestas automáticas de IA desactivadas para el contacto {}", fromPhone);
+                            }
                         }
                     }
                 }
@@ -193,8 +207,11 @@ public class WhatsAppWebhookController {
         try {
             logger.info("Iniciando procesamiento de respuesta automática de IA para el contacto: {}", clientPhone);
             
-            // 1. Llamar a la API de Gemini
-            String aiResponse = geminiService.generateResponse(clientMessage);
+            // 1. Obtener datos del contacto e inyectar contexto
+            Contact contact = contactDao.findByPhone(clientPhone).orElse(null);
+
+            // 2. Llamar a la API de Gemini
+            String aiResponse = geminiService.generateResponse(clientMessage, contact);
             
             // 2. Si la IA generó una respuesta y la clave de la API está configurada
             if (aiResponse != null && !aiResponse.trim().isEmpty()) {

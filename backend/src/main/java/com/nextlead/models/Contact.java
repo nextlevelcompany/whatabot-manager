@@ -23,6 +23,7 @@ public class Contact {
     private String empresaNombre;    // Resuelto con JOIN, no se persiste
     // Estado
     private Boolean starred;
+    private Boolean aiActive = false;
     private LocalDateTime dateCreated;
     private String referencia;
     // Relación 1-N con direcciones
@@ -85,4 +86,7 @@ public class Contact {
 
     public String getReferencia() { return referencia; }
     public void setReferencia(String referencia) { this.referencia = referencia; }
+
+    public Boolean getAiActive() { return aiActive != null ? aiActive : false; }
+    public void setAiActive(Boolean aiActive) { this.aiActive = aiActive; }
 }

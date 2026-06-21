@@ -15,6 +15,8 @@ public interface ContactDao {
     void update(Contact contact);
     void deleteById(Long id);
     void updateStarred(Long id, boolean starred);
+    void updateAiActive(Long id, boolean aiActive);
+    Optional<Contact> findByPhone(String phone);
     List<Direccion> findAddressesByContactId(Long id);
     List<Contact> findPersonasByEmpresaId(Long empresaId);
     List<Ubigeo> findAllUbigeos();
