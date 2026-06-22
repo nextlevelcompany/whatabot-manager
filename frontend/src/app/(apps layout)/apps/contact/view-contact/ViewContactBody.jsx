@@ -6,7 +6,7 @@ import { Mail, Phone, Calendar, Hash, Edit, Check, X, Plus, Trash, Eye, Search, 
 import Link from 'next/link';
 import InteractiveMap from '../InteractiveMap';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
 
 const ViewContactBody = ({ setContactName }) => {
     const searchParams = useSearchParams();

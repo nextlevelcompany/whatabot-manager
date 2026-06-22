@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS system_settings (
     value_text TEXT NOT NULL
 );
 
+-- Seed de configuración inicial de la IA
+INSERT INTO system_settings (key_name, value_text) VALUES
+('ai.active', 'true'),
+('ai.agent.name', 'Antarqui Bot'),
+('ai.business.description', 'Venta de agua alcalina premium Antarqui en Lima'),
+('ai.tone', 'Amigable y cercano')
+ON CONFLICT (key_name) DO NOTHING;
+
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_active BOOLEAN DEFAULT FALSE;
 
 -- ============================================================
@@ -154,4 +162,75 @@ INSERT INTO productos (codigo, nombre, descripcion, categoria_id, precio_venta, 
 ('P3-B20LC', 'Pack 3 Recargas Bidón 20L con Caño', 'Trío Saludable: 3 Recargas de 20L con caño', (SELECT id FROM categorias_producto WHERE nombre = 'Promociones'), 45.00, 0, TRUE, FALSE, TRUE),
 ('P3-B20LE-B10LG', 'Pack 3 Recargas Bidón 20L + Envase + Bidón 10L gratis', 'COMBO NUEVO CLIENTE: 3 Bidones nuevos (Lleva envase + recarga) + 1 bidón de 10L gratis', (SELECT id FROM categorias_producto WHERE nombre = 'Promociones'), 90.00, 0, TRUE, FALSE, TRUE)
 ON CONFLICT (codigo) DO NOTHING;
+
+
+-- ============================================================
+-- NUEVAS TABLAS PARA EL AGENTE DE IA DINÁMICO
+-- ============================================================
+
+-- Cobertura de despacho de la IA
+CREATE TABLE IF NOT EXISTS shipping_coverage (
+    id SERIAL PRIMARY KEY,
+    district_name VARCHAR(100) UNIQUE NOT NULL,
+    delivery_fee NUMERIC(10, 2) DEFAULT 0.00,
+    min_order_amount NUMERIC(10, 2) DEFAULT 0.00,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Seed de distritos de cobertura por defecto (de Antarqui)
+INSERT INTO shipping_coverage (district_name, delivery_fee, min_order_amount, is_active) VALUES
+('Ate', 0.00, 0.00, TRUE),
+('Vitarte', 0.00, 0.00, TRUE),
+('La Molina', 0.00, 0.00, TRUE),
+('Santa Anita', 0.00, 0.00, TRUE),
+('SJL', 0.00, 0.00, TRUE),
+('Huachipa', 0.00, 0.00, TRUE),
+('Santa Clara', 0.00, 0.00, TRUE),
+('Carapongo', 0.00, 0.00, TRUE),
+('Rímac', 0.00, 0.00, TRUE),
+('Campoy', 0.00, 0.00, TRUE),
+('Zarate', 0.00, 0.00, TRUE),
+('San Luis', 0.00, 0.00, TRUE)
+ON CONFLICT (district_name) DO NOTHING;
+
+-- Configuración de productos específicos para el Agente de IA (enlazando al catálogo existente)
+CREATE TABLE IF NOT EXISTS ai_products_config (
+    id SERIAL PRIMARY KEY,
+    producto_id INT NOT NULL REFERENCES productos(id) ON DELETE CASCADE UNIQUE,
+    ai_enabled BOOLEAN DEFAULT TRUE,
+    search_keywords TEXT,
+    custom_ai_description TEXT
+);
+
+-- Seed inicial habilitando todos los productos existentes para la IA por defecto
+INSERT INTO ai_products_config (producto_id, ai_enabled, search_keywords)
+SELECT id, TRUE, nombre FROM productos
+ON CONFLICT (producto_id) DO NOTHING;
+
+-- Base de conocimientos de FAQs con soporte para archivos adjuntos
+CREATE TABLE IF NOT EXISTS ai_knowledge_base (
+    id SERIAL PRIMARY KEY,
+    category VARCHAR(100) NOT NULL,
+    keywords TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    attachment_url TEXT,
+    attachment_type VARCHAR(20) CHECK (attachment_type IN ('IMAGE','PDF','AUDIO','NONE')) DEFAULT 'NONE'
+);
+
+-- Seed de preguntas frecuentes (FAQs) del Asesor Comercial Antarqui
+INSERT INTO ai_knowledge_base (category, keywords, answer, attachment_url, attachment_type)
+SELECT 'Bienvenida', 'hola,buenos dias,buenas tardes,buenas noches,informacion,info,menu,catalogo,productos', '¡Hola! 💧 Bienvenido a *Antarqui Perú*. Impulsa tu bienestar con la mejor hidratación:\n\n✅ *Agua Alcalina* (PH 8.2)\n✅ *Ionizada*\n✅ *Ozonizada*\n✅ *12 procesos de purificación*\n\n🚚 ¡*DELIVERY GRATIS* en Zonas de Cobertura! 🏠💨', 'pack10l.jpg', 'IMAGE'
+WHERE NOT EXISTS (SELECT 1 FROM ai_knowledge_base WHERE category = 'Bienvenida');
+
+INSERT INTO ai_knowledge_base (category, keywords, answer, attachment_url, attachment_type)
+SELECT 'Promoción Especial', 'promocion,especial,oferta,descuento,promo', '🌟 ¡Aquí está nuestra promo *ANTARQUI*!\nIdeal para familias que consumen agua frecuentemente:\n*Pack 3 Recargas 20L con Caño + 1 Bidón de 10 L de regalo* a un precio increíble de S/ 48.00.', NULL, 'NONE'
+WHERE NOT EXISTS (SELECT 1 FROM ai_knowledge_base WHERE category = 'Promoción Especial');
+
+INSERT INTO ai_knowledge_base (category, keywords, answer, attachment_url, attachment_type)
+SELECT 'Zonas de Cobertura', 'cobertura,distritos,envian,delivery,entregan,direccion,envios,donde envian', 'Realizamos delivery gratuito en los siguientes distritos: Ate, Vitarte, La Molina, Santa Anita, SJL, Huachipa, Santa Clara, Carapongo, Rímac, Campoy, Zarate y San Luis. 🚛💨', NULL, 'NONE'
+WHERE NOT EXISTS (SELECT 1 FROM ai_knowledge_base WHERE category = 'Zonas de Cobertura');
+
+INSERT INTO ai_knowledge_base (category, keywords, answer, attachment_url, attachment_type)
+SELECT 'Beneficios del Agua', 'alcalina,beneficios,ph,por que,salud,buena,ozonizada', 'Nuestra Agua Alcalina pH 8.2 está ionizada y ozonizada mediante 12 procesos de purificación. Ayuda a neutralizar la acidez en el cuerpo, mejora la hidratación celular y aporta minerales esenciales para tu bienestar diario. 💧✨', NULL, 'NONE'
+WHERE NOT EXISTS (SELECT 1 FROM ai_knowledge_base WHERE category = 'Beneficios del Agua');
 

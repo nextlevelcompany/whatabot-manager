@@ -8,9 +8,10 @@ import InteractiveMap from '../InteractiveMap';
 
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
-        return `${window.location.protocol}//${window.location.hostname}:8080`;
+        const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
+        return `${window.location.protocol}//${hostname}:8080`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
 };
 const API_BASE = getApiBase();
 

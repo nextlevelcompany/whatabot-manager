@@ -175,14 +175,17 @@ public class WhatsAppWebhookController {
                         messagingTemplate.convertAndSend(destination, message);
                         logger.info("Mensaje transmitido en tiempo real vía WebSocket a {}", destination);
 
-                        // Responder asíncronamente con la Inteligencia Artificial de Gemini (solo para textos, no imágenes y si el cliente tiene la IA activa)
+                        // Responder asíncronamente con la Inteligencia Artificial de Gemini (solo para textos, no imágenes)
                         if ("text".equals(type)) {
-                            // Validar si el contacto tiene activada la respuesta por IA
+                            // 1. Validar si el agente de IA está activo globalmente
+                            boolean isGlobalAiActive = "true".equalsIgnoreCase(settingsService.getSetting("ai.active"));
+                            
+                            // 2. Validar si el contacto específico tiene activa la IA (como anulación manual)
                             boolean isAiActiveForContact = contactDao.findByPhone(fromPhone)
                                     .map(Contact::getAiActive)
                                     .orElse(false);
 
-                            if (isAiActiveForContact) {
+                            if (isGlobalAiActive || isAiActiveForContact) {
                                 final String cleanFromPhone = fromPhone;
                                 final String cleanTextBody = textBody;
                                 final String cleanOurNumber = ourNumber;
@@ -191,7 +194,7 @@ public class WhatsAppWebhookController {
                                     respondWithAI(cleanFromPhone, cleanTextBody, cleanOurNumber);
                                 });
                             } else {
-                                logger.info("Respuestas automáticas de IA desactivadas para el contacto {}", fromPhone);
+                                logger.info("Respuestas automáticas de IA desactivadas (globalmente desactivado y desactivado para contacto {})", fromPhone);
                             }
                         }
                     }
@@ -200,9 +203,6 @@ public class WhatsAppWebhookController {
         }
     }
 
-    /**
-     * Lógica asíncrona para consultar a la IA y responder al cliente en segundo plano.
-     */
     private void respondWithAI(String clientPhone, String clientMessage, String ourNumber) {
         try {
             logger.info("Iniciando procesamiento de respuesta automática de IA para el contacto: {}", clientPhone);
@@ -212,32 +212,65 @@ public class WhatsAppWebhookController {
 
             // 2. Llamar a la API de Gemini
             String aiResponse = geminiService.generateResponse(clientMessage, contact);
-            
-            // 2. Si la IA generó una respuesta y la clave de la API está configurada
-            if (aiResponse != null && !aiResponse.trim().isEmpty()) {
-                // Enviar respuesta real vía WhatsApp (requiere el número completo con código de país)
-                String wamid = apiService.sendMessage(clientPhone, aiResponse);
-                
-                // Guardar la respuesta de la IA en la Base de Datos
-                WhatsAppMessage aiMessage = new WhatsAppMessage();
-                aiMessage.setSender(ourNumber); // El CRM envía
-                aiMessage.setReceiver(clientPhone); // El cliente recibe
-                aiMessage.setMessageText(aiResponse);
-                aiMessage.setTimestamp(LocalDateTime.now());
-                aiMessage.setStatus(wamid != null ? "SENT" : "FAILED");
-                aiMessage.setWamid(wamid);
-                
-                messageDao.save(aiMessage);
-                logger.info("Respuesta de la IA guardada y enviada a {} con estado: {}", clientPhone, aiMessage.getStatus());
 
-                // Transmitir respuesta de la IA vía WebSocket usando los últimos 9 dígitos
-                String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
-                messagingTemplate.convertAndSend("/topic/chat/" + last9, aiMessage);
-                logger.info("Respuesta de la IA transmitida en tiempo real al chat de la pantalla.");
+            // Verificar códigos de error de la API
+            if ("ERROR_GEMINI_429".equals(aiResponse)) {
+                sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Límite de cuota excedido (Error 429) en tu API Key de Gemini. El Agente de IA no pudo responder automáticamente. Por favor, actualiza tu clave o espera un minuto.", ourNumber);
+                return;
+            } else if ("ERROR_GEMINI_GENERAL".equals(aiResponse)) {
+                sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Ocurrió un error al conectar con Gemini API. Verifica las credenciales.", ourNumber);
+                return;
+            } else if (aiResponse == null || aiResponse.trim().isEmpty()) {
+                sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* El Agente de IA no devolvió ninguna respuesta (respuesta vacía).", ourNumber);
+                return;
             }
+            
+            // Enviar respuesta real vía WhatsApp (requiere el número completo con código de país)
+            String wamid = apiService.sendMessage(clientPhone, aiResponse);
+            
+            // Guardar la respuesta de la IA en la Base de Datos
+            WhatsAppMessage aiMessage = new WhatsAppMessage();
+            aiMessage.setSender(ourNumber); // El CRM envía
+            aiMessage.setReceiver(clientPhone); // El cliente recibe
+            aiMessage.setMessageText(aiResponse);
+            aiMessage.setTimestamp(LocalDateTime.now());
+            aiMessage.setStatus(wamid != null ? "SENT" : "FAILED");
+            aiMessage.setWamid(wamid);
+            
+            messageDao.save(aiMessage);
+            logger.info("Respuesta de la IA guardada y enviada a {} con estado: {}", clientPhone, aiMessage.getStatus());
+
+            // Transmitir respuesta de la IA vía WebSocket usando los últimos 9 dígitos
+            String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+            messagingTemplate.convertAndSend("/topic/chat/" + last9, aiMessage);
+            logger.info("Respuesta de la IA transmitida en tiempo real al chat de la pantalla.");
+
+            // Si Meta falló al enviar el mensaje de WhatsApp
+            if (wamid == null) {
+                sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Meta WhatsApp API no pudo enviar el mensaje. Verifica tu saldo de Meta Cloud, vigencia del Token o que el número sea válido.", ourNumber);
+            }
+
         } catch (Exception e) {
             logger.error("Error al procesar la respuesta automática de la IA: {}", e.getMessage(), e);
+            sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Error al procesar la IA: " + e.getMessage(), ourNumber);
         }
+    }
+
+    private void sendSystemAlert(String clientPhone, String text, String ourNumber) {
+        WhatsAppMessage alertMessage = new WhatsAppMessage();
+        alertMessage.setSender("SYSTEM");
+        alertMessage.setReceiver(clientPhone);
+        alertMessage.setMessageText(text);
+        alertMessage.setTimestamp(LocalDateTime.now());
+        alertMessage.setStatus("SENT");
+        alertMessage.setWamid("system-alert-" + java.time.Instant.now().toEpochMilli());
+        
+        messageDao.save(alertMessage);
+        
+        // Transmitir vía WebSocket
+        String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+        messagingTemplate.convertAndSend("/topic/chat/" + last9, alertMessage);
+        logger.info("Alerta de sistema transmitida vía WebSocket a /topic/chat/{}", last9);
     }
 
     private void processStatuses(JsonNode valueNode) {
