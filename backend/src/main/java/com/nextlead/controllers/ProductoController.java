@@ -169,4 +169,55 @@ public class ProductoController {
                     .body(Map.of("status", "error", "message", e.getMessage()));
         }
     }
+
+    @GetMapping("/{id}/imagen")
+    public ResponseEntity<byte[]> getProductImage(@PathVariable Long id) {
+        Optional<Producto> opt = productoDao.findById(id);
+        if (opt.isEmpty() || opt.get().getImagen() == null || opt.get().getImagen().trim().isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        try {
+            String rawImage = opt.get().getImagen();
+            String base64Data = rawImage;
+            String contentType = "image/jpeg"; // default
+            
+            if (rawImage.contains(",")) {
+                String[] parts = rawImage.split(",");
+                String header = parts[0];
+                base64Data = parts[1];
+                if (header.contains("image/png")) {
+                    contentType = "image/png";
+                } else if (header.contains("image/webp")) {
+                    contentType = "image/webp";
+                } else if (header.contains("image/gif")) {
+                    contentType = "image/gif";
+                }
+            }
+            
+            byte[] imageBytes = java.util.Base64.getDecoder().decode(base64Data.trim());
+            return ResponseEntity.ok()
+                    .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
+                    .body(imageBytes);
+        } catch (IllegalArgumentException e) {
+            // Si no era base64 válido, tal vez es un nombre de archivo local
+            try {
+                String filename = opt.get().getImagen();
+                java.io.File file = new java.io.File("/app/uploads/" + filename);
+                if (file.exists()) {
+                    byte[] fileBytes = java.nio.file.Files.readAllBytes(file.toPath());
+                    String contentType = "image/jpeg";
+                    if (filename.toLowerCase().endsWith(".png")) contentType = "image/png";
+                    else if (filename.toLowerCase().endsWith(".webp")) contentType = "image/webp";
+                    return ResponseEntity.ok()
+                            .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
+                            .body(fileBytes);
+                }
+            } catch (Exception ignored) {}
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 }
+

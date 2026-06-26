@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @RestController
@@ -128,7 +129,13 @@ public class WhatsAppWebhookController {
                 if ("text".equals(type) || "image".equals(type) || "audio".equals(type) || "video".equals(type)) {
                     String fromPhone = messageNode.has("from") ? messageNode.get("from").asText() : null;
                     long unixTime = messageNode.has("timestamp") ? messageNode.get("timestamp").asLong() : Instant.now().getEpochSecond();
+                    String messageId = messageNode.has("id") ? messageNode.get("id").asText() : null;
                     String textBody = "";
+
+                    if (messageId != null && messageDao.findByWamid(messageId).isPresent()) {
+                        logger.info("El mensaje con wamid {} ya fue procesado. Omitiendo duplicado.", messageId);
+                        continue;
+                    }
 
                     if ("text".equals(type)) {
                         textBody = messageNode.path("text").path("body").asText();
@@ -165,9 +172,10 @@ public class WhatsAppWebhookController {
                         message.setMessageText(textBody);
                         message.setTimestamp(timestamp);
                         message.setStatus("RECEIVED");
+                        message.setWamid(messageId);
 
                         messageDao.save(message);
-                        logger.info("Guardado mensaje de WhatsApp recibido desde {} : {}", fromPhone, textBody);
+                        logger.info("Guardado mensaje de WhatsApp recibido desde {} con wamid {} : {}", fromPhone, messageId, textBody);
 
                         // Transmitir vía WebSocket al canal correspondiente de este cliente (últimos 9 dígitos)
                         String last9 = fromPhone.length() >= 9 ? fromPhone.substring(fromPhone.length() - 9) : fromPhone;
@@ -177,29 +185,104 @@ public class WhatsAppWebhookController {
 
                         // Responder asíncronamente con la Inteligencia Artificial de Gemini (solo para textos, no imágenes)
                         if ("text".equals(type)) {
-                            // 1. Validar si el agente de IA está activo globalmente
-                            boolean isGlobalAiActive = "true".equalsIgnoreCase(settingsService.getSetting("ai.active"));
+                            // Obtener el contacto para verificar su configuración individual
+                            Optional<Contact> contactOpt = contactDao.findByPhone(fromPhone);
                             
-                            // 2. Validar si el contacto específico tiene activa la IA (como anulación manual)
-                            boolean isAiActiveForContact = contactDao.findByPhone(fromPhone)
-                                    .map(Contact::getAiActive)
-                                    .orElse(false);
+                            // Verificar palabras clave para derivación a humano (humanFallback)
+                            String cleanText = textBody.trim().toLowerCase();
+                            boolean isHumanFallback = cleanText.matches("^(humano|persona|ayuda|stop|asesor|agente|hablar con alguien)$");
 
-                            if (isGlobalAiActive || isAiActiveForContact) {
-                                final String cleanFromPhone = fromPhone;
-                                final String cleanTextBody = textBody;
-                                final String cleanOurNumber = ourNumber;
+                            if (isHumanFallback) {
+                                logger.info("Palabra clave de derivación detectada para {}: '{}'", fromPhone, cleanText);
                                 
-                                CompletableFuture.runAsync(() -> {
-                                    respondWithAI(cleanFromPhone, cleanTextBody, cleanOurNumber);
+                                // 1. Desactivar la IA para el contacto en la BD
+                                contactOpt.ifPresent(contact -> {
+                                    contactDao.updateAiActive(contact.getId(), false);
+                                    logger.info("IA desactivada para el contacto ID: {}", contact.getId());
                                 });
+
+                                // 2. Enviar mensaje de WhatsApp al cliente
+                                String fallbackMsg = "He derivado tu caso con un asesor, en breve te atenderán.";
+                                String wamid = apiService.sendMessage(fromPhone, fallbackMsg);
+
+                                // 3. Guardar el mensaje en la BD
+                                WhatsAppMessage fallbackReply = new WhatsAppMessage();
+                                fallbackReply.setSender(ourNumber);
+                                fallbackReply.setReceiver(fromPhone);
+                                fallbackReply.setMessageText(fallbackMsg);
+                                fallbackReply.setTimestamp(LocalDateTime.now());
+                                fallbackReply.setStatus(wamid != null ? "SENT" : "FAILED");
+                                fallbackReply.setWamid(wamid);
+                                messageDao.save(fallbackReply);
+
+                                // 4. Transmitir el mensaje por WebSocket
+                                messagingTemplate.convertAndSend("/topic/chat/" + last9, fallbackReply);
+
+                                // 5. Registrar una alerta del sistema en la BD y transmitirla por WebSocket
+                                sendSystemAlert(fromPhone, "⚠️ *Alerta del Sistema:* Chatbot desactivado y caso derivado a un asesor humano.", ourNumber);
                             } else {
-                                logger.info("Respuestas automáticas de IA desactivadas (globalmente desactivado y desactivado para contacto {})", fromPhone);
+                                // Flujo normal de Gemini
+                                boolean isGlobalAiActive = "true".equalsIgnoreCase(settingsService.getSetting("ai.active"));
+                                boolean shouldReply = contactOpt.map(Contact::getAiActive).orElse(isGlobalAiActive);
+
+                                if (shouldReply) {
+                                    // Fase 4: Límite de cuota de mensajes automática para evitar bucles (Dinámico)
+                                    int countLast24h = messageDao.countOutgoingMessagesInLast24Hours(fromPhone);
+                                    
+                                    String quotaStr = settingsService.getSetting("ai.max.quota");
+                                    int maxQuota = 30; // fallback por defecto
+                                    try {
+                                        if (quotaStr != null && !quotaStr.trim().isEmpty()) {
+                                            maxQuota = Integer.parseInt(quotaStr.trim());
+                                        }
+                                    } catch (NumberFormatException e) {
+                                        logger.warn("El valor de ai.max.quota no es un entero válido: {}, usando fallback 30.", quotaStr);
+                                    }
+                                    
+                                    if (countLast24h >= maxQuota) {
+                                        logger.warn("El contacto {} ha excedido la cuota diaria de mensajes automáticos ({} de {} enviados). Desactivando IA.", fromPhone, countLast24h, maxQuota);
+                                        contactOpt.ifPresent(contact -> {
+                                            contactDao.updateAiActive(contact.getId(), false);
+                                        });
+                                        sendSystemAlert(fromPhone, "⚠️ *Alerta del Sistema:* Límite de respuestas automáticas excedido (máximo " + maxQuota + " mensajes por día). Chatbot desactivado para evitar bucles infinitos.", ourNumber);
+                                    } else {
+                                        final String cleanFromPhone = fromPhone;
+                                        final String cleanTextBody = textBody;
+                                        final String cleanOurNumber = ourNumber;
+                                        
+                                        CompletableFuture.runAsync(() -> {
+                                            respondWithAI(cleanFromPhone, cleanTextBody, cleanOurNumber);
+                                        });
+                                    }
+                                } else {
+                                    logger.info("Respuestas automáticas de IA desactivadas (individualmente desactivado o globalmente apagado) para contacto: {}", fromPhone);
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    private byte[] getImageBytes(String urlString) {
+        try {
+            // 1. Intentar buscar localmente si es un archivo en /app/uploads/
+            String filename = urlString.substring(urlString.lastIndexOf("/") + 1);
+            java.io.File file = new java.io.File("/app/uploads/" + filename);
+            if (file.exists()) {
+                logger.info("Cargando imagen localmente desde: /app/uploads/{}", filename);
+                return java.nio.file.Files.readAllBytes(file.toPath());
+            }
+            
+            // 2. Si no es local, descargarlo por HTTP
+            String targetUrl = urlString.replace("localhost", "host.docker.internal");
+            logger.info("Descargando imagen desde URL: {}", targetUrl);
+            org.springframework.web.client.RestTemplate downloadTemplate = new org.springframework.web.client.RestTemplate();
+            return downloadTemplate.getForObject(targetUrl, byte[].class);
+        } catch (Exception e) {
+            logger.error("Error al obtener los bytes de la imagen: " + urlString, e);
+            return null;
         }
     }
 
@@ -214,19 +297,56 @@ public class WhatsAppWebhookController {
             String aiResponse = geminiService.generateResponse(clientMessage, contact);
 
             // Verificar códigos de error de la API
-            if ("ERROR_GEMINI_429".equals(aiResponse)) {
-                sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Límite de cuota excedido (Error 429) en tu API Key de Gemini. El Agente de IA no pudo responder automáticamente. Por favor, actualiza tu clave o espera un minuto.", ourNumber);
-                return;
-            } else if ("ERROR_GEMINI_GENERAL".equals(aiResponse)) {
-                sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Ocurrió un error al conectar con Gemini API. Verifica las credenciales.", ourNumber);
+            if (aiResponse != null && aiResponse.startsWith("ERROR_GEMINI_")) {
+                String errorDetails = aiResponse.substring("ERROR_GEMINI_".length());
+                String userFriendlyAlert = "⚠️ *Alerta del Sistema:* Ocurrió un error al conectar con Gemini API.\n\n*Detalles del error:* `" + errorDetails + "`";
+                sendSystemAlert(clientPhone, userFriendlyAlert, ourNumber);
                 return;
             } else if (aiResponse == null || aiResponse.trim().isEmpty()) {
                 sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* El Agente de IA no devolvió ninguna respuesta (respuesta vacía).", ourNumber);
                 return;
             }
             
-            // Enviar respuesta real vía WhatsApp (requiere el número completo con código de país)
-            String wamid = apiService.sendMessage(clientPhone, aiResponse);
+            String cleanedResponse = aiResponse;
+            String mediaId = null;
+            
+            // Patrón para buscar: [IMG:Nombre|URL|Descripción|Precio] o [IMG:Nombre|URL]
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\[IMG:([^\\]|]+)\\|([^\\]|\\s]+)[^\\]]*\\]");
+            java.util.regex.Matcher matcher = pattern.matcher(aiResponse);
+            
+            if (matcher.find()) {
+                String imgName = matcher.group(1);
+                String imgUrl = matcher.group(2);
+                
+                logger.info("Etiqueta [IMG] detectada. Nombre: {}, URL: {}", imgName, imgUrl);
+                
+                // Remover la etiqueta del mensaje de texto final
+                cleanedResponse = matcher.replaceAll("").trim();
+                
+                // Descargar y subir la imagen a Meta
+                byte[] imgBytes = getImageBytes(imgUrl);
+                if (imgBytes != null && imgBytes.length > 0) {
+                    String mimeType = "image/jpeg";
+                    if (imgUrl.toLowerCase().endsWith(".png")) mimeType = "image/png";
+                    else if (imgUrl.toLowerCase().endsWith(".webp")) mimeType = "image/webp";
+                    
+                    mediaId = apiService.uploadMedia(imgBytes, imgName + ".jpg", mimeType);
+                }
+            }
+            
+            // Enviar respuesta real vía WhatsApp (si quedó texto disponible)
+            String wamid = null;
+            if (!cleanedResponse.isEmpty()) {
+                wamid = apiService.sendMessage(clientPhone, cleanedResponse);
+            }
+            
+            // Si detectamos una imagen y la subimos correctamente, la enviamos al cliente
+            if (mediaId != null) {
+                String imgWamid = apiService.sendMediaMessage(clientPhone, mediaId, "image", null);
+                if (wamid == null) {
+                    wamid = imgWamid;
+                }
+            }
             
             // Guardar la respuesta de la IA en la Base de Datos
             WhatsAppMessage aiMessage = new WhatsAppMessage();

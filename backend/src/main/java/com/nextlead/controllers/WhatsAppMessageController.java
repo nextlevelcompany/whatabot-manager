@@ -1,7 +1,9 @@
 package com.nextlead.controllers;
 
 import com.nextlead.dao.WhatsAppMessageDao;
+import com.nextlead.dao.ContactDao;
 import com.nextlead.models.WhatsAppMessage;
+import com.nextlead.models.Contact;
 import com.nextlead.services.WhatsAppApiService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +19,7 @@ import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/messages")
@@ -27,14 +30,17 @@ public class WhatsAppMessageController {
     private final WhatsAppMessageDao messageDao;
     private final WhatsAppApiService apiService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ContactDao contactDao;
 
     @Autowired
     public WhatsAppMessageController(WhatsAppMessageDao messageDao, 
                                      WhatsAppApiService apiService, 
-                                     SimpMessagingTemplate messagingTemplate) {
+                                     SimpMessagingTemplate messagingTemplate,
+                                     ContactDao contactDao) {
         this.messageDao = messageDao;
         this.apiService = apiService;
         this.messagingTemplate = messagingTemplate;
+        this.contactDao = contactDao;
     }
 
     /**
@@ -112,6 +118,17 @@ public class WhatsAppMessageController {
 
         // Guardar el mensaje en la base de datos
         messageDao.save(message);
+
+        // Desactivar automáticamente el Agente de IA para este contacto (Takeover humano)
+        if (receiverPhone != null) {
+            final String targetPhone = receiverPhone;
+            contactDao.findByPhone(targetPhone).ifPresent(c -> {
+                if (c.getAiActive()) {
+                    contactDao.updateAiActive(c.getId(), false);
+                    logger.info("IA de contacto desactivada automáticamente para {} debido al envío de un mensaje manual por un agente.", targetPhone);
+                }
+            });
+        }
 
         // Transmitir vía WebSocket al canal de la conversación usando los últimos 9 dígitos
         String last9 = message.getReceiver().length() >= 9 

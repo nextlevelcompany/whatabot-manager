@@ -55,11 +55,13 @@ public class SettingsService {
         settings.put("whatsapp.verify.token", getSetting("whatsapp.verify.token"));
         settings.put("whatsapp.display.number", getSetting("whatsapp.display.number"));
         settings.put("gemini.api.key", getSetting("gemini.api.key"));
+        settings.put("gemini.model", getSetting("gemini.model"));
         settings.put("gemini.system.prompt", getSetting("gemini.system.prompt"));
         settings.put("ai.active", getSetting("ai.active"));
         settings.put("ai.agent.name", getSetting("ai.agent.name"));
         settings.put("ai.business.description", getSetting("ai.business.description"));
         settings.put("ai.tone", getSetting("ai.tone"));
+        settings.put("ai.max.quota", getSetting("ai.max.quota"));
         return settings;
     }
 
@@ -75,6 +77,8 @@ public class SettingsService {
                 return fallbackDisplayNumber;
             case "gemini.api.key":
                 return fallbackGeminiApiKey;
+            case "gemini.model":
+                return "gemini-1.5-flash";
             case "gemini.system.prompt":
                 return DEFAULT_GEMINI_SYSTEM_PROMPT;
             case "ai.active":
@@ -85,6 +89,8 @@ public class SettingsService {
                 return "Venta de agua alcalina premium Antarqui en Lima";
             case "ai.tone":
                 return "Amigable y cercano";
+            case "ai.max.quota":
+                return "30";
             default:
                 return null;
         }

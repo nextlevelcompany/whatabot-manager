@@ -14,4 +14,5 @@ public interface WhatsAppMessageDao {
     void delete(Long id);
     Optional<WhatsAppMessage> findByWamid(String wamid);
     void updateStatusByWamid(String wamid, String status);
+    int countOutgoingMessagesInLast24Hours(String clientPhone);
 }

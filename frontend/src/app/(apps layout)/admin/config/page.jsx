@@ -24,11 +24,13 @@ export default function ConfigPage() {
         'whatsapp.verify.token': '',
         'whatsapp.display.number': '',
         'gemini.api.key': '',
+        'gemini.model': 'gemini-1.5-flash',
         'gemini.system.prompt': '',
         'ai.agent.name': 'Asesor Comercial',
         'ai.business.description': 'Venta de productos y servicios',
         'ai.tone': 'Amigable y cercano',
-        'ai.active': 'false'
+        'ai.active': 'false',
+        'ai.max.quota': '30'
     });
 
     // AI Products Config States
@@ -351,6 +353,24 @@ export default function ConfigPage() {
                                                 <option value="Entusiasta y alegre">Entusiasta y alegre</option>
                                             </Form.Select>
                                         </Form.Group>
+
+                                        <Form.Group className="mb-3" controlId="aiMaxQuota">
+                                            <Form.Label className="fw-semibold small">Límite diario de respuestas automáticas (por cliente)</Form.Label>
+                                            <Form.Control
+                                                type="number"
+                                                name="ai.max.quota"
+                                                value={settings['ai.max.quota'] || '30'}
+                                                onChange={handleSettingChange}
+                                                placeholder="Ej. 30"
+                                                min="1"
+                                                max="500"
+                                                className="form-control-lg"
+                                                style={{ fontSize: '0.9rem' }}
+                                            />
+                                            <Form.Text className="text-muted small">
+                                                Desactiva el chatbot para un contacto si supera esta cantidad de respuestas del bot en 24h para evitar bucles de spam.
+                                            </Form.Text>
+                                        </Form.Group>
                                     </Card.Body>
                                 </Card>
                             </Col>
@@ -379,6 +399,44 @@ export default function ConfigPage() {
                                                     {showGemini ? <Icons.EyeOff size={18} /> : <Icons.Eye size={18} />}
                                                 </Button>
                                             </InputGroup>
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3" controlId="geminiModel">
+                                            <Form.Label className="fw-semibold small">Modelo de Gemini</Form.Label>
+                                            <Form.Select
+                                                name="gemini.model_select"
+                                                value={['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'].includes(settings['gemini.model']) ? settings['gemini.model'] : 'custom'}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (val !== 'custom') {
+                                                        setSettings(prev => ({ ...prev, 'gemini.model': val }));
+                                                    } else {
+                                                        setSettings(prev => ({ ...prev, 'gemini.model': '' }));
+                                                    }
+                                                }}
+                                                className="form-control-lg mb-2"
+                                                style={{ fontSize: '0.9rem' }}
+                                            >
+                                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recomendado - Rápido y económico)</option>
+                                                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Última generación - Balanceado)</option>
+                                                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Complejo - Alta capacidad)</option>
+                                                <option value="custom">Otro modelo (Personalizado)...</option>
+                                            </Form.Select>
+                                            
+                                            {(!['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'].includes(settings['gemini.model'])) && (
+                                                <Form.Control
+                                                    type="text"
+                                                    name="gemini.model"
+                                                    value={settings['gemini.model'] || ''}
+                                                    onChange={handleSettingChange}
+                                                    placeholder="Ingrese el nombre exacto del modelo (ej: gemini-2.5-pro)"
+                                                    style={{ fontSize: '0.9rem' }}
+                                                    className="mb-1"
+                                                />
+                                            )}
+                                            <Form.Text className="text-muted small">
+                                                Modelo activo configurado: <strong className="text-success">{settings['gemini.model'] || 'gemini-1.5-flash (por defecto)'}</strong>
+                                            </Form.Text>
                                         </Form.Group>
 
                                         <Form.Group className="mb-3" controlId="geminiPrompt">
@@ -539,7 +597,7 @@ export default function ConfigPage() {
                                                 <div className="d-flex align-items-center gap-2">
                                                     {prod.productImage ? (
                                                         <img 
-                                                            src={`${API_BASE}/productos/view/${prod.productImage}`} 
+                                                            src={prod.productImage.startsWith('data:') ? prod.productImage : `${API_BASE}/api/productos/${prod.productoId}/imagen`} 
                                                             alt={prod.productName} 
                                                             style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '6px' }}
                                                             onError={(e) => { e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="%23cbd5e1" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>' }}

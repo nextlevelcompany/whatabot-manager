@@ -112,4 +112,13 @@ public class WhatsAppMessageDaoImpl implements WhatsAppMessageDao {
         String sql = "UPDATE whatsapp_messages SET status = ? WHERE wamid = ?";
         jdbcTemplate.update(sql, status, wamid);
     }
+
+    @Override
+    public int countOutgoingMessagesInLast24Hours(String clientPhone) {
+        String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+        String matchPattern = "%" + last9;
+        String sql = "SELECT COUNT(*) FROM whatsapp_messages WHERE receiver LIKE ? AND sender != ? AND timestamp >= NOW() - INTERVAL '1 day'";
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, matchPattern, clientPhone);
+        return count != null ? count : 0;
+    }
 }

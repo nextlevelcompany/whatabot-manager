@@ -1,0 +1,25 @@
+{
+  "entry": [
+    {
+      "changes": [
+        {
+          "value": {
+            "metadata": {
+              "display_phone_number": "15551935901"
+            },
+            "messages": [
+              {
+                "from": "51931340288",
+                "type": "text",
+                "text": {
+                  "body": "Hola, cuanto cuesta el bidon de agua?"
+                },
+                "timestamp": 1718820000
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
