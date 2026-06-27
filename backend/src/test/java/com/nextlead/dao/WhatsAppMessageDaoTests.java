@@ -1,6 +1,8 @@
 package com.nextlead.dao;
 
-import com.nextlead.models.WhatsAppMessage;
+import com.nextlead.wspai.dao.WhatsAppMessageDao;
+import com.nextlead.wspai.dao.WhatsAppMessageDaoImpl;
+import com.nextlead.wspai.model.WhatsAppMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;

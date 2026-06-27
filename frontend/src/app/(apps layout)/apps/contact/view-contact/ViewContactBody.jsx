@@ -1458,13 +1458,48 @@ const ViewContactBody = ({ setContactName }) => {
                                 <div className="p-3" style={{ height: '500px', overflowY: 'auto', backgroundColor: '#efeae2', backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")' }}>
                                     <div className="d-flex flex-column gap-2">
                                         {wspMessages.map((msg, idx) => {
-                                                                            const isImage = msg.text && msg.text.startsWith('[IMAGE]');
-                                            const isAudio = msg.text && msg.text.startsWith('[AUDIO]');
-                                            const isVideo = msg.text && msg.text.startsWith('[VIDEO]');
+                                            let isImage = false;
+                                            let isAudio = false;
+                                            let isVideo = false;
                                             let mediaUrl = '';
-                                            if (isImage || isAudio || isVideo) {
-                                                const path = msg.text.substring(7);
-                                                mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
+                                            let displayText = msg.text || '';
+
+                                            if (msg.text) {
+                                                if (msg.text.startsWith('[IMAGE]')) {
+                                                    isImage = true;
+                                                    const path = msg.text.substring(7);
+                                                    mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
+                                                    displayText = '';
+                                                } else if (msg.text.startsWith('[AUDIO]')) {
+                                                    isAudio = true;
+                                                    const path = msg.text.substring(7);
+                                                    mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
+                                                    displayText = '';
+                                                } else if (msg.text.startsWith('[VIDEO]')) {
+                                                    isVideo = true;
+                                                    const path = msg.text.substring(7);
+                                                    mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
+                                                    displayText = '';
+                                                } else {
+                                                    const mediaRegex = /\[MEDIA:(image|audio|video)\](?: id=([^\s\]]+))?(?: url=([^\s\]]+))?/;
+                                                    const match = msg.text.match(mediaRegex);
+                                                    if (match) {
+                                                        const type = match[1];
+                                                        const id = match[2];
+                                                        const url = match[3];
+
+                                                        if (type === 'image') isImage = true;
+                                                        else if (type === 'audio') isAudio = true;
+                                                        else if (type === 'video') isVideo = true;
+
+                                                        if (url) {
+                                                            mediaUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
+                                                        } else if (id) {
+                                                            mediaUrl = `${API_BASE}/api/productos/${id}/imagen`;
+                                                        }
+                                                        displayText = msg.text.replace(mediaRegex, '').trim();
+                                                    }
+                                                }
                                             }
 
                                             return (
@@ -1509,8 +1544,8 @@ const ViewContactBody = ({ setContactName }) => {
                                                             />
                                                         </div>
                                                     )}
-                                                    {!isImage && !isAudio && !isVideo && (
-                                                        <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</p>
+                                                    {displayText && (
+                                                        <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap' }}>{displayText}</p>
                                                     )}
                                                     <div className="d-flex align-items-center justify-content-end gap-1" style={{ marginTop: '2px' }}>
                                                         <small className="text-muted" style={{ fontSize: '0.6rem' }}>{msg.time}</small>
