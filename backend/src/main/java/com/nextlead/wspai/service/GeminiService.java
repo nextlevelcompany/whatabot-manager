@@ -99,16 +99,19 @@ public class GeminiService {
             boolean wantsDelivery = containsAny(normalizedMessage,
                     "envio", "delivery", "cobertura", "donde", "lleg", "direccion", "direc",
                     "distrito", "tarifa", "reparto", "envian", "entregan");
-
-            StringBuilder contextBuilder = new StringBuilder();
             String publicBaseUrl = getPublicBaseUrl();
+            StringBuilder contextBuilder = new StringBuilder();
 
-            appendProductContext(contextBuilder, normalizedMessage, wantsProducts, publicBaseUrl);
+            appendProductContext(contextBuilder, normalizedMessage, publicBaseUrl);
             appendDeliveryContext(contextBuilder, normalizedMessage, wantsDelivery);
             appendFaqContext(contextBuilder, normalizedMessage, publicBaseUrl);
 
             StringBuilder customerContextBuilder = new StringBuilder("\nCLIENTE:\n");
-            if (contact != null) {
+            boolean isFullyRegistered = contact != null && 
+                                        ((contact.getDirecciones() != null && !contact.getDirecciones().isEmpty()) || 
+                                         (contact.getReferencia() != null && !contact.getReferencia().trim().isEmpty()));
+
+            if (isFullyRegistered) {
                 String clientName = "DESCONOCIDO";
                 String typePers = contact.getTipoPersona() != null ? contact.getTipoPersona() : "NATURAL";
                 if ("NATURAL".equals(typePers)) {
@@ -122,6 +125,17 @@ public class GeminiService {
                     customerContextBuilder.append("- Dirección registrada: ").append(contact.getReferencia()).append("\n");
                 }
             } else {
+                String clientName = "DESCONOCIDO";
+                if (contact != null) {
+                    String typePers = contact.getTipoPersona() != null ? contact.getTipoPersona() : "NATURAL";
+                    if ("NATURAL".equals(typePers)) {
+                        clientName = ((contact.getNombres() != null ? contact.getNombres() : "") + " " +
+                                      (contact.getApellidos() != null ? contact.getApellidos() : "")).trim();
+                    } else {
+                        clientName = contact.getRazonSocial() != null ? contact.getRazonSocial().trim() : "DESCONOCIDO";
+                    }
+                }
+                customerContextBuilder.append("- Nombre: ").append(emptyToDefault(clientName, "DESCONOCIDO")).append("\n");
                 customerContextBuilder.append("- Estado: Nuevo cliente. Preséntate de forma cordial si corresponde.\n");
             }
 
@@ -219,32 +233,19 @@ public class GeminiService {
         }
     }
 
-    private void appendProductContext(StringBuilder contextBuilder, String normalizedMessage, boolean wantsProducts, String publicBaseUrl) {
-        if (!wantsProducts) {
-            contextBuilder.append("\nPRODUCTOS: El cliente aún no solicitó productos/precios. No menciones precios salvo que corresponda.\n");
-            return;
-        }
-
+    private void appendProductContext(StringBuilder contextBuilder, String normalizedMessage, String publicBaseUrl) {
         List<AiProductConfig> allAiProducts = aiConfigDao.getAllAiProductsConfig().stream()
                 .filter(p -> p.getAiEnabled() != null && p.getAiEnabled())
                 .sorted(Comparator.comparing(p -> p.getPriority() == null ? 100 : p.getPriority()))
                 .collect(Collectors.toList());
 
-        List<AiProductConfig> matchedProducts = allAiProducts.stream()
-                .filter(p -> productMatches(p, normalizedMessage))
-                .collect(Collectors.toList());
-
-        List<AiProductConfig> productsToSend = matchedProducts.isEmpty()
-                ? allAiProducts.stream().limit(5).collect(Collectors.toList())
-                : matchedProducts.stream().limit(7).collect(Collectors.toList());
-
         contextBuilder.append("\nCATÁLOGO/PRODUCTOS RELEVANTES:\n");
-        if (productsToSend.isEmpty()) {
+        if (allAiProducts.isEmpty()) {
             contextBuilder.append("- No hay productos activos para IA.\n");
             return;
         }
 
-        for (AiProductConfig prod : productsToSend) {
+        for (AiProductConfig prod : allAiProducts) {
             contextBuilder.append("- nombre: ").append(nullSafe(prod.getProductName())).append("\n")
                     .append("  codigo: ").append(nullSafe(prod.getProductCode())).append("\n")
                     .append("  precio: S/ ").append(nullSafe(prod.getProductPrice())).append("\n")
@@ -263,26 +264,23 @@ public class GeminiService {
             if (prod.getProductImage() != null && !prod.getProductImage().trim().isEmpty()) {
                 contextBuilder.append("  image_url: ").append(buildProductImageUrl(publicBaseUrl, prod)).append("\n");
             }
+            contextBuilder.append("\n");
         }
     }
 
     private void appendDeliveryContext(StringBuilder contextBuilder, String normalizedMessage, boolean wantsDelivery) {
-        if (!wantsDelivery) {
-            contextBuilder.append("\nDELIVERY: Si pregunta por envíos, solicita su distrito para validar cobertura.\n");
-            return;
-        }
-
         List<ShippingCoverage> allCoverage = aiConfigDao.getAllShippingCoverage().stream()
                 .filter(c -> c.getIsActive() != null && c.getIsActive())
                 .collect(Collectors.toList());
 
         List<ShippingCoverage> matchedCoverage = allCoverage.stream()
-                .filter(cov -> coverageMatches(cov, normalizedMessage))
+                .filter(c -> containsAny(normalizedMessage, c.getDistrictName()) || 
+                             (c.getAliases() != null && containsAny(normalizedMessage, c.getAliases().split(","))))
                 .collect(Collectors.toList());
 
-        List<ShippingCoverage> coverageToSend = matchedCoverage.isEmpty()
-                ? allCoverage.stream().limit(10).collect(Collectors.toList())
-                : matchedCoverage;
+        List<ShippingCoverage> coverageToSend = (wantsDelivery && !matchedCoverage.isEmpty()) 
+                ? matchedCoverage.stream().limit(10).collect(Collectors.toList())
+                : allCoverage.stream().limit(10).collect(Collectors.toList());
 
         contextBuilder.append("\nCOBERTURA Y TARIFAS DE ENVÍO:\n");
         if (coverageToSend.isEmpty()) {

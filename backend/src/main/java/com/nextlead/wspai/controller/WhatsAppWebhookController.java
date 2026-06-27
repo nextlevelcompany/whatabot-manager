@@ -191,6 +191,42 @@ public class WhatsAppWebhookController {
                         if ("text".equals(type) || "audio".equals(type)) {
                             // Obtener el contacto para verificar su configuración individual
                             Optional<Contact> contactOpt = contactDao.findByPhone(fromPhone);
+                            if (contactOpt.isEmpty()) {
+                                try {
+                                    String profileName = "Nuevo Contacto";
+                                    JsonNode contactsNode = valueNode.get("contacts");
+                                    if (contactsNode != null && contactsNode.isArray() && contactsNode.size() > 0) {
+                                        JsonNode firstContact = contactsNode.get(0);
+                                        JsonNode profileNode = firstContact.get("profile");
+                                        if (profileNode != null && profileNode.has("name")) {
+                                            profileName = profileNode.get("name").asText();
+                                        }
+                                    }
+
+                                    Contact newContact = new Contact();
+                                    newContact.setTipoPersona("NATURAL");
+                                    newContact.setTipoDocumento("DNI");
+                                    newContact.setNumeroDocumento(fromPhone);
+                                    
+                                    if (profileName != null && profileName.contains(" ")) {
+                                        int spaceIndex = profileName.indexOf(" ");
+                                        newContact.setNombres(profileName.substring(0, spaceIndex).trim());
+                                        newContact.setApellidos(profileName.substring(spaceIndex).trim());
+                                    } else {
+                                        newContact.setNombres(profileName);
+                                        newContact.setApellidos("");
+                                    }
+                                    
+                                    newContact.setTelefonoPrincipal(fromPhone);
+                                    newContact.setStarred(false);
+                                    newContact.setAiActive(true);
+                                    Contact savedContact = contactDao.save(newContact);
+                                    contactOpt = Optional.of(savedContact);
+                                    logger.info("Creado nuevo contacto automáticamente en base de datos: {} ({})", profileName, fromPhone);
+                                } catch (Exception e) {
+                                    logger.error("Error al crear automáticamente el contacto para el teléfono {}: ", fromPhone, e);
+                                }
+                            }
 
                             // Verificar palabras clave para derivación a humano (solo texto)
                             boolean isHumanFallback = "text".equals(type) && isHumanFallback(textBody);
@@ -345,21 +381,57 @@ public class WhatsAppWebhookController {
                 }
                 mediaType = mediaType.trim().toLowerCase();
 
-                if ((mediaId == null || mediaId.trim().isEmpty()) && imageUrl != null && !imageUrl.trim().isEmpty()) {
-                    byte[] imgBytes = getImageBytes(imageUrl.trim());
-                    if (imgBytes != null && imgBytes.length > 0) {
-                        String mimeType = detectMimeType(imageUrl);
-                        String filename = "ai_media_" + System.currentTimeMillis() + extensionFromMime(mimeType);
-                        mediaId = apiService.uploadMedia(imgBytes, filename, mimeType);
+                // Separar por comas si hay múltiples imágenes o IDs
+                String[] mediaIds = mediaId != null && !mediaId.trim().isEmpty() ? mediaId.split(",") : new String[0];
+                String[] imageUrls = imageUrl != null && !imageUrl.trim().isEmpty() ? imageUrl.split(",") : new String[0];
+
+                int count = Math.max(mediaIds.length, imageUrls.length);
+                if (count == 0 && imageUrl != null && !imageUrl.trim().isEmpty()) {
+                    imageUrls = new String[]{imageUrl};
+                    count = 1;
+                }
+                if (count == 0 && mediaId != null && !mediaId.trim().isEmpty()) {
+                    mediaIds = new String[]{mediaId};
+                    count = 1;
+                }
+
+                for (int i = 0; i < count; i++) {
+                    String currentId = i < mediaIds.length ? mediaIds[i].trim() : null;
+                    String currentUrl = i < imageUrls.length ? imageUrls[i].trim() : null;
+
+                    // Si el ID contiene una URL, tratar como URL
+                    if (currentId != null && currentId.startsWith("http")) {
+                        if (currentUrl == null || currentUrl.isEmpty()) {
+                            currentUrl = currentId;
+                        }
+                        currentId = null;
+                    }
+
+                    // Descargar y subir a Meta si no hay ID
+                    if ((currentId == null || currentId.isEmpty()) && currentUrl != null && !currentUrl.isEmpty()) {
+                        byte[] imgBytes = getImageBytes(currentUrl);
+                        if (imgBytes != null && imgBytes.length > 0) {
+                            String mimeType = detectMimeType(currentUrl);
+                            String filename = "ai_media_" + System.currentTimeMillis() + "_" + i + extensionFromMime(mimeType);
+                            currentId = apiService.uploadMedia(imgBytes, filename, mimeType);
+                        }
+                    }
+
+                    if (currentId != null && !currentId.isEmpty()) {
+                        // Enviar caption solo en la primera imagen (o si es la única)
+                        String currentCaption = (i == 0) ? (caption != null && !caption.trim().isEmpty() ? caption.trim() : replyText) : null;
+                        String currentWamid = apiService.sendMediaMessage(clientPhone, currentId, mediaType, null, currentCaption);
+                        if (currentWamid != null) {
+                            wamid = currentWamid; // Guardamos el último wamid
+                            mediaSent = true;
+                        }
+                        // Pequeña pausa para asegurar orden de entrega en WhatsApp
+                        try { Thread.sleep(800); } catch (InterruptedException ignored) {}
                     }
                 }
 
-                if (mediaId != null && !mediaId.trim().isEmpty()) {
-                    String mediaCaption = caption != null && !caption.trim().isEmpty() ? caption.trim() : replyText;
-                    wamid = apiService.sendMediaMessage(clientPhone, mediaId.trim(), mediaType, null, mediaCaption);
-                    mediaSent = wamid != null;
-                } else {
-                    logger.warn("Gemini solicitó envío de media, pero no hay media_id ni image_url válido. Se enviará solo texto.");
+                if (!mediaSent) {
+                    logger.warn("Gemini solicitó envío de media, pero no se pudo enviar ningún media_id ni image_url válido.");
                 }
             }
 
