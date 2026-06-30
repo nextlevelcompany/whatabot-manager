@@ -85,9 +85,7 @@ public class GeminiService {
 
             String tone = settingsService.getSetting("ai.tone");
             if (tone == null || tone.trim().isEmpty()) tone = "Amigable y cercano";
-
-            String customRules = settingsService.getSetting("gemini.system.prompt");
-
+            String customRules = buildSystemPromptRules();
             String normalizedMessage = normalize(userMessage);
 
             boolean wantsProducts = containsAny(normalizedMessage,
@@ -169,7 +167,6 @@ public class GeminiService {
                     .append("}\n")
                     .append(customerContextBuilder)
                     .append(contextBuilder);
-
             if (customRules != null && !customRules.trim().isEmpty()) {
                 finalSystemPrompt.append("\nREGLAS DE NEGOCIO ADICIONALES:\n").append(customRules).append("\n");
             }
@@ -354,8 +351,14 @@ public class GeminiService {
             for (int i = start; i < pastMessages.size(); i++) {
                 WhatsAppMessage msg = pastMessages.get(i);
                 String role = msg.getSender().equals(contact.getTelefonoPrincipal()) ? "user" : "model";
+                String text = msg.getMessageText();
+                if (text == null) {
+                    text = "";
+                } else if (text.startsWith("data:") || text.length() > 5000) {
+                    text = "[Contenido multimedia / extenso omitido]";
+                }
                 Map<String, Object> part = new HashMap<>();
-                part.put("text", msg.getMessageText());
+                part.put("text", text);
                 Map<String, Object> contentMap = new HashMap<>();
                 contentMap.put("role", role);
                 contentMap.put("parts", List.of(part));
@@ -560,5 +563,92 @@ public class GeminiService {
 
     private String emptyToDefault(String value, String defaultValue) {
         return value == null || value.trim().isEmpty() ? defaultValue : value.trim();
+    }
+
+    private String buildSystemPromptRules() {
+        StringBuilder sb = new StringBuilder();
+        
+        String businessType = settingsService.getSetting("ai.business.type");
+        if (businessType == null || businessType.trim().isEmpty()) {
+            businessType = "ECOMMERCE";
+        }
+        
+        sb.append("=== CONFIGURACIÓN DEL GIRO DE NEGOCIO ===\n")
+          .append("Tipo de Negocio Activo: ").append(businessType).append("\n");
+        
+        if ("ECOMMERCE".equals(businessType)) {
+            sb.append("- Sigues un flujo de e-commerce: Presentación de productos del catálogo -> Configuración del Carrito -> Validación de Cobertura -> Dirección de entrega -> Facturación/Comprobante -> Resumen -> Ticket final.\n");
+            if ("true".equalsIgnoreCase(settingsService.getSetting("ai.ask.container"))) {
+                String ruleText = settingsService.getSetting("ai.ask.container.text");
+                if (ruleText == null || ruleText.trim().isEmpty()) {
+                    ruleText = "Si el cliente selecciona un bidón o producto de 20L, pregúntale en un turno separado si cuenta con envase retornable en casa. Ofrece préstamo o venta de envase nuevo según corresponda.";
+                }
+                sb.append("- REGLA DE ENVASE: ").append(ruleText.trim()).append("\n");
+            }
+        } else if ("SERVICES".equals(businessType)) {
+            sb.append("- Sigues un flujo de servicios/citas: Presentación de catálogo de servicios -> Selección de servicio -> Selección de fecha/hora de preferencia -> Validación de disponibilidad -> Reserva -> Comprobante -> Confirmación de cita.\n");
+        } else if ("RESERVATIONS".equals(businessType)) {
+            sb.append("- Sigues un flujo de reservas/hotelería: Presentación de tarifas/habitaciones/mesas -> Selección de fecha/hora y número de huéspedes -> Validación de disponibilidad -> Confirmación de reserva -> Ticket/Código de reserva.\n");
+        } else if ("LEADS".equals(businessType)) {
+            sb.append("- Sigues un flujo de captación de clientes B2B/Leads: Presentación de brochure/servicios corporativos -> Calificación del prospecto (Preguntar nombre, cargo, empresa, necesidad y número telefónico) -> Registro en CRM -> Derivación humana inmediata (marca needs_human=true al final).\n");
+        }
+
+        sb.append("\n=== REGLAS DE SALUDO Y BIENVENIDA ===\n");
+        String greetingNew = settingsService.getSetting("ai.greeting.new");
+        if (greetingNew != null && !greetingNew.trim().isEmpty()) {
+            sb.append("- Mensaje de bienvenida para CLIENTES NUEVOS (usa este saludo o estructura exacta para presentarte): \"")
+              .append(greetingNew.trim()).append("\"\n");
+        }
+        String greetingRegistered = settingsService.getSetting("ai.greeting.registered");
+        if (greetingRegistered != null && !greetingRegistered.trim().isEmpty()) {
+            sb.append("- Mensaje de bienvenida para CLIENTES REGISTRADOS (usa este saludo o estructura exacta saludando por su nombre): \"")
+              .append(greetingRegistered.trim()).append("\"\n");
+        }
+
+        sb.append("\n=== PARÁMETROS OBLIGATORIOS DURANTE EL PROCESO ===\n");
+        if ("true".equalsIgnoreCase(settingsService.getSetting("ai.collect.location"))) {
+            String ruleText = settingsService.getSetting("ai.collect.location.text");
+            if (ruleText == null || ruleText.trim().isEmpty()) {
+                ruleText = "Es obligatorio solicitar al cliente que comparta su ubicación GPS nativa por WhatsApp para el delivery.";
+            }
+            sb.append("- UBICACIÓN: ").append(ruleText.trim()).append("\n");
+        }
+        if ("true".equalsIgnoreCase(settingsService.getSetting("ai.collect.document"))) {
+            String ruleText = settingsService.getSetting("ai.collect.document.text");
+            if (ruleText == null || ruleText.trim().isEmpty()) {
+                ruleText = "Debes solicitar el tipo de comprobante. Si es Boleta con DNI exige exactamente 8 dígitos numéricos. Si es Factura exige Razón Social y exactamente 11 dígitos numéricos para el RUC.";
+            }
+            sb.append("- FACTURACIÓN: ").append(ruleText.trim()).append("\n");
+        }
+        
+        if ("true".equalsIgnoreCase(settingsService.getSetting("ai.products.promotion"))) {
+            String promoText = settingsService.getSetting("ai.products.promotion.text");
+            String mediaType = settingsService.getSetting("ai.products.promotion.media.type");
+            String mediaIds = settingsService.getSetting("ai.products.promotion.media.ids");
+            
+            sb.append("\n=== PROMOCIÓN Y PRODUCTOS ESPECIALES ===\n");
+            if (promoText != null && !promoText.trim().isEmpty()) {
+                sb.append("- Ofrece al cliente la promoción especial: \"")
+                  .append(promoText.trim()).append("\"\n");
+            }
+            if ("IMAGE".equalsIgnoreCase(mediaType) && mediaIds != null && !mediaIds.trim().isEmpty()) {
+                sb.append("- Esta promoción tiene una o varias imágenes asociadas. Debes responder con send_media=true, media_type=\"IMAGE\", media_id=\"")
+                  .append(mediaIds.trim()).append("\", y el texto descriptivo en reply_text o caption. El backend gestionará su envío múltiple a WhatsApp.\n");
+            }
+        }
+
+        String paymentMethods = settingsService.getSetting("ai.payment.methods");
+        if (paymentMethods != null && !paymentMethods.trim().isEmpty()) {
+            sb.append("- MÉTODOS DE PAGO: Informa al cliente que los métodos de pago aceptados son únicamente: ")
+              .append(paymentMethods.trim()).append("\n");
+        }
+
+        String customInstructions = settingsService.getSetting("ai.custom.instructions");
+        if (customInstructions != null && !customInstructions.trim().isEmpty()) {
+            sb.append("\n=== INSTRUCCIONES DE NEGOCIO ADICIONALES ===\n")
+              .append(customInstructions.trim()).append("\n");
+        }
+        
+        return sb.toString();
     }
 }

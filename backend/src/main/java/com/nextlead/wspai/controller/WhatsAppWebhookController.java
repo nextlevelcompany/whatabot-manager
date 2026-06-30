@@ -7,6 +7,8 @@ import com.nextlead.dao.ContactDao;
 import com.nextlead.wspai.model.AiDecisionResponse;
 import com.nextlead.wspai.model.WhatsAppMessage;
 import com.nextlead.models.Contact;
+import com.nextlead.wspai.dao.AiConfigDao;
+import com.nextlead.wspai.model.AiProductConfig;
 import com.nextlead.wspai.service.GeminiService;
 import com.nextlead.wspai.service.WhatsAppApiService;
 import com.nextlead.services.SettingsService;
@@ -37,6 +39,7 @@ public class WhatsAppWebhookController {
     private final SimpMessagingTemplate messagingTemplate;
     private final WhatsAppApiService apiService;
     private final GeminiService geminiService;
+    private final AiConfigDao aiConfigDao;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -45,13 +48,15 @@ public class WhatsAppWebhookController {
                                      WhatsAppApiService apiService,
                                      GeminiService geminiService,
                                      SettingsService settingsService,
-                                     ContactDao contactDao) {
+                                     ContactDao contactDao,
+                                     AiConfigDao aiConfigDao) {
         this.messageDao = messageDao;
         this.messagingTemplate = messagingTemplate;
         this.apiService = apiService;
         this.geminiService = geminiService;
         this.settingsService = settingsService;
         this.contactDao = contactDao;
+        this.aiConfigDao = aiConfigDao;
     }
 
     private String getVerifyToken() {
@@ -376,6 +381,7 @@ public class WhatsAppWebhookController {
             boolean mediaSent = false;
 
             if (sendMedia) {
+                java.util.List<AiProductConfig> allAiProducts = aiConfigDao.getAllAiProductsConfig();
                 if (mediaType == null || mediaType.trim().isEmpty() || "null".equalsIgnoreCase(mediaType.trim())) {
                     mediaType = "image";
                 }
@@ -418,8 +424,26 @@ public class WhatsAppWebhookController {
                     }
 
                     if (currentId != null && !currentId.isEmpty()) {
-                        // Enviar caption solo en la primera imagen (o si es la única)
-                        String currentCaption = (i == 0) ? (caption != null && !caption.trim().isEmpty() ? caption.trim() : replyText) : null;
+                        // Buscar si coincide con algún producto del catálogo para extraer su caption correspondiente
+                        String currentCaption = null;
+                        final String cid = currentId;
+                        final String curl = currentUrl;
+                        
+                        AiProductConfig matchedProd = allAiProducts.stream()
+                            .filter(p -> (p.getMediaIdWhatsapp() != null && p.getMediaIdWhatsapp().trim().equals(cid)) ||
+                                         (curl != null && p.getProductoId() != null && curl.contains("/api/productos/" + p.getProductoId() + "/imagen")))
+                            .findFirst().orElse(null);
+                            
+                        if (matchedProd != null) {
+                            currentCaption = matchedProd.getImageCaption();
+                            if (currentCaption == null || currentCaption.trim().isEmpty()) {
+                                currentCaption = "*" + matchedProd.getProductName() + "*\n💵 *Precio:* S/ " + (matchedProd.getProductPrice() != null ? matchedProd.getProductPrice().toString() : "0.00") + "\n\n" + (matchedProd.getCustomAiDescription() != null ? matchedProd.getCustomAiDescription().trim() : "");
+                            }
+                        } else {
+                            // Enviar caption solo en la primera imagen (o si es la única)
+                            currentCaption = (i == 0) ? (caption != null && !caption.trim().isEmpty() ? caption.trim() : replyText) : null;
+                        }
+
                         String currentWamid = apiService.sendMediaMessage(clientPhone, currentId, mediaType, null, currentCaption);
                         if (currentWamid != null) {
                             wamid = currentWamid; // Guardamos el último wamid
