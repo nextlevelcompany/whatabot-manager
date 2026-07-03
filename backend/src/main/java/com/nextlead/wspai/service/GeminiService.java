@@ -599,10 +599,23 @@ public class GeminiService {
             sb.append("- Mensaje de bienvenida para CLIENTES NUEVOS (usa este saludo o estructura exacta para presentarte): \"")
               .append(greetingNew.trim()).append("\"\n");
         }
+        String greetingNewMediaType = settingsService.getSetting("ai.greeting.new.media.type");
+        String greetingNewMediaIds = settingsService.getSetting("ai.greeting.new.media.ids");
+        if ("IMAGE".equalsIgnoreCase(greetingNewMediaType) && greetingNewMediaIds != null && !greetingNewMediaIds.trim().isEmpty()) {
+            sb.append("- Este saludo inicial tiene imágenes asociadas. Al dar la bienvenida por primera vez, debes responder con send_media=true, media_type=\"IMAGE\", media_id=\"")
+              .append(greetingNewMediaIds.trim()).append("\", y el texto del saludo en reply_text o caption.\n");
+        }
+
         String greetingRegistered = settingsService.getSetting("ai.greeting.registered");
         if (greetingRegistered != null && !greetingRegistered.trim().isEmpty()) {
             sb.append("- Mensaje de bienvenida para CLIENTES REGISTRADOS (usa este saludo o estructura exacta saludando por su nombre): \"")
               .append(greetingRegistered.trim()).append("\"\n");
+        }
+        String greetingRegMediaType = settingsService.getSetting("ai.greeting.registered.media.type");
+        String greetingRegMediaIds = settingsService.getSetting("ai.greeting.registered.media.ids");
+        if ("IMAGE".equalsIgnoreCase(greetingRegMediaType) && greetingRegMediaIds != null && !greetingRegMediaIds.trim().isEmpty()) {
+            sb.append("- Este saludo de cliente registrado tiene imágenes asociadas. Al dar la bienvenida, debes responder con send_media=true, media_type=\"IMAGE\", media_id=\"")
+              .append(greetingRegMediaIds.trim()).append("\", y el texto del saludo en reply_text o caption.\n");
         }
 
         sb.append("\n=== PARÁMETROS OBLIGATORIOS DURANTE EL PROCESO ===\n");
@@ -625,11 +638,16 @@ public class GeminiService {
             String promoText = settingsService.getSetting("ai.products.promotion.text");
             String mediaType = settingsService.getSetting("ai.products.promotion.media.type");
             String mediaIds = settingsService.getSetting("ai.products.promotion.media.ids");
+            String promoKeywords = settingsService.getSetting("ai.products.promotion.keywords");
             
             sb.append("\n=== PROMOCIÓN Y PRODUCTOS ESPECIALES ===\n");
             if (promoText != null && !promoText.trim().isEmpty()) {
                 sb.append("- Ofrece al cliente la promoción especial: \"")
                   .append(promoText.trim()).append("\"\n");
+            }
+            if (promoKeywords != null && !promoKeywords.trim().isEmpty()) {
+                sb.append("- Debes sugerir u ofrecer esta promoción si el usuario pregunta o menciona palabras relacionadas con: ")
+                  .append(promoKeywords.trim()).append("\n");
             }
             if ("IMAGE".equalsIgnoreCase(mediaType) && mediaIds != null && !mediaIds.trim().isEmpty()) {
                 sb.append("- Esta promoción tiene una o varias imágenes asociadas. Debes responder con send_media=true, media_type=\"IMAGE\", media_id=\"")

@@ -14,7 +14,7 @@ const Dashboard = () => {
     return (
         <>
             <ChatBotInterface show={false} />
-            <Container fluid="xxl" >
+            <Container fluid >
                 <Tab.Container activeKey="overview">
                     {/* Page Header */}
                     <div className="hk-pg-header pg-header-wth-tab pt-7">

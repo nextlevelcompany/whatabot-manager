@@ -190,7 +190,6 @@ const ContactAppHeader = ({ toggleSidebar, show, onAddNewContact, viewMode, setV
                     </HkTooltip>
                 </Button>
             </div>
-            <div className={classNames("hk-sidebar-togglable", { "active": show })} onClick={toggleSidebar} />
         </header>
     )
 }

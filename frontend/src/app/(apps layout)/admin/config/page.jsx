@@ -15,7 +15,8 @@ const getApiBase = () => {
 const API_BASE = getApiBase();
 
 export default function ConfigPage() {
-    const [activeTab, setActiveTab] = useState('general');
+    const [activeTab, setActiveTab] = useState('ai_config');
+    const [activeNode, setActiveNode] = useState('welcome');
 
     // General Settings States
     const [settings, setSettings] = useState({
@@ -30,8 +31,56 @@ export default function ConfigPage() {
         'ai.business.description': 'Venta de productos y servicios',
         'ai.tone': 'Amigable y cercano',
         'ai.active': 'false',
-        'ai.max.quota': '30'
+        'ai.max.quota': '30',
+        'ai.business.type': 'ECOMMERCE',
+        'ai.ask.container': 'true',
+        'ai.ask.container.text': 'Veo que llevas una recarga de agua de 20L. 💧 ¿Cuentas con envase retornable vacío en casa para entregar al repartidor? Si no tienes, podemos cotizarte la venta de un envase nuevo.',
+        'ai.collect.location': 'true',
+        'ai.collect.location.text': 'Por favor, compárteme tu ubicación actual por el GPS nativo de WhatsApp 📍 para coordinar tu envío gratis a domicilio.',
+        'ai.products.promotion': 'true',
+        'ai.products.promotion.text': '🎁 ¡Tenemos excelentes noticias! Contamos con nuestra *Promoción Especial del Mes*: 3 Recargas de Agua Alcalina de 20L por solo *S/ 39.00* (¡ahorras S/ 15.00!). Además, te podemos brindar información de nuestros bidones nuevos de policarbonato. ¿Te gustaría llevar la promoción o prefieres ver otros productos? 💧',
+        'ai.products.promotion.media.ids': '',
+        'ai.products.promotion.media.type': 'NONE',
+        'ai.products.promotion.post.text': '',
+        'ai.products.promotion.keywords': 'promocion, especial, oferta, descuento, promo, combo, paquete, pack, promociones, ofertas, combos, paquetes, packs, precio, precios, tarifas, costo, costos, catalogos, catalogo, rebaja, rebajas, regalo, gratis, info, informacion',
+        'ai.collect.document': 'true',
+        'ai.collect.document.text': 'Para procesar tu pedido, ¿requieres boleta de venta o factura? 🧾 Si es boleta facilítame tu DNI (8 dígitos) o tu RUC (11 dígitos) con la razón social si es factura.',
+        'ai.greeting.new': '¡Hola! 💧 Bienvenido a *Antarqui Perú*. Impulsa tu bienestar con la mejor hidratación:\n\n✅ *Agua Alcalina* (PH 8.2)\n✅ *Ionizada*\n✅ *Ozonizada*\n✅ *12 procesos de purificación*\n\n🚚 ¡*DELIVERY GRATIS* en Zonas de Cobertura! 🏠💨\n\n👉 *NUESTROS PRODUCTOS*:\n🎁 ¿Te gustaría ver también nuestra *PROMOCIÓN ESPECIAL* de 3 recargas con un precio increíble?',
+        'ai.greeting.new.media.type': 'NONE',
+        'ai.greeting.new.media.ids': '',
+        'ai.greeting.registered': '¡Hola *[Nombre]*, bienvenido de nuevo a *Antarqui Perú*! 💧 ¿Te gustaría pedir tu recarga de siempre o prefieres conocer nuestras promociones del día?',
+        'ai.greeting.registered.media.type': 'NONE',
+        'ai.greeting.registered.media.ids': '',
+        'ai.payment.methods': 'Yape, Plin, Efectivo contra entrega, Transferencias bancarias',
+        'ai.custom.instructions': 'Ofrecer la promoción especial de 3 recargas si muestran interés en compras familiares o de consumo recurrente.',
+        'ai.flow.order': 'business,welcome,registered,location,promotion,billing,container,payment,custom'
     });
+
+    const [flowOrder, setFlowOrder] = useState([
+        'business',
+        'welcome',
+        'registered',
+        'location',
+        'promotion',
+        'billing',
+        'container',
+        'payment',
+        'custom'
+    ]);
+
+    // Reorder handler
+    const handleMoveStep = (index, direction) => {
+        const newOrder = [...flowOrder];
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= newOrder.length) return;
+
+        const temp = newOrder[index];
+        newOrder[index] = newOrder[targetIndex];
+        newOrder[targetIndex] = temp;
+
+        setFlowOrder(newOrder);
+        setSettings(prev => ({ ...prev, 'ai.flow.order': newOrder.join(',') }));
+    };
 
     // AI Products Config States
     const [productsConfig, setProductsConfig] = useState([]);
@@ -69,10 +118,13 @@ export default function ConfigPage() {
                 const settingsRes = await fetch(`${API_BASE}/api/settings`);
                 if (settingsRes.ok) {
                     const settingsData = await settingsRes.json();
-                    setSettings(prev => ({
-                        ...prev,
-                        ...settingsData
-                    }));
+                    setSettings(prev => {
+                        const updated = { ...prev, ...settingsData };
+                        if (updated['ai.flow.order']) {
+                            setFlowOrder(updated['ai.flow.order'].split(','));
+                        }
+                        return updated;
+                    });
                 }
 
                 // 2. Fetch products config
@@ -114,6 +166,57 @@ export default function ConfigPage() {
         }, 5000);
     };
 
+    // Helper to get image URL or Base64 from mediaId or URL
+    const getImageUrlForMediaId = (item) => {
+        if (!item) return '';
+        const trimmed = item.trim();
+        if (!trimmed) return '';
+        
+        const isUrl = trimmed.startsWith('http') || trimmed.startsWith('data:') || trimmed.startsWith('/');
+        
+        // Find matching product in productsConfig
+        const prod = productsConfig.find(p => 
+            (p.mediaIdWhatsapp && String(p.mediaIdWhatsapp).trim() === trimmed) ||
+            (isUrl && p.productoId && trimmed.includes(`/api/productos/${p.productoId}/imagen`))
+        );
+        
+        if (prod) {
+            if (prod.productImage && prod.productImage.startsWith('data:')) {
+                return prod.productImage;
+            }
+            return `${API_BASE}/api/productos/${prod.productoId}/imagen`;
+        }
+        
+        if (isUrl) {
+            return trimmed;
+        }
+        
+        // Return dummy SVG placeholder indicating Meta Cloud WhatsApp Media ID
+        return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 24 24" fill="none" stroke="%238ec5fc" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline><text x="4" y="22" fill="%23075e54" font-size="1.8" font-family="sans-serif" font-weight="bold">WhatsApp Media</text></svg>';
+    };
+
+    // Helper to render preview images list
+    const renderPreviewImages = (mediaIdsString) => {
+        if (!mediaIdsString) return null;
+        const items = mediaIdsString.split(',');
+        return (
+            <div className="d-flex flex-wrap gap-2 mb-2 justify-content-start">
+                {items.map((item, idx) => {
+                    const src = getImageUrlForMediaId(item);
+                    return (
+                        <div key={idx} className="overflow-hidden rounded border text-center bg-light shadow-sm" style={{ width: '120px', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <img 
+                                src={src} 
+                                alt={`Preview ${idx}`} 
+                                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
     // Helper to format WhatsApp text styling in preview
     const formatWhatsappText = (text) => {
         if (!text) return '';
@@ -141,7 +244,7 @@ export default function ConfigPage() {
                 body: JSON.stringify(settings)
             });
             if (res.ok) {
-                showAlert('success', 'Configuraciones generales guardadas exitosamente.');
+                showAlert('success', 'Configuraciones guardadas exitosamente.');
             } else {
                 showAlert('danger', 'Error en el servidor al intentar guardar configuraciones.');
             }
@@ -153,35 +256,30 @@ export default function ConfigPage() {
         }
     };
 
-    // Products Config Handlers
+    // Product Configurations Handlers
     const handleProductToggle = async (index, currentVal) => {
-        const updatedVal = !currentVal;
-        const prod = productsConfig[index];
-        const updatedProd = {
-            ...prod,
-            aiEnabled: updatedVal
-        };
-
+        const newVal = !currentVal;
+        const targetProd = { ...productsConfig[index], aiEnabled: newVal };
         try {
             const res = await fetch(`${API_BASE}/api/ai/products-config`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    productoId: updatedProd.productoId,
-                    aiEnabled: updatedProd.aiEnabled,
-                    searchKeywords: updatedProd.searchKeywords || '',
-                    customAiDescription: updatedProd.customAiDescription || '',
-                    intent: updatedProd.intent || '',
-                    priority: updatedProd.priority ? parseInt(updatedProd.priority) : 100,
-                    mediaIdWhatsapp: updatedProd.mediaIdWhatsapp || '',
-                    imageCaption: updatedProd.imageCaption || ''
+                    productoId: targetProd.productoId,
+                    aiEnabled: targetProd.aiEnabled,
+                    searchKeywords: targetProd.searchKeywords || '',
+                    customAiDescription: targetProd.customAiDescription || '',
+                    intent: targetProd.intent || '',
+                    priority: targetProd.priority ? parseInt(targetProd.priority) : 100,
+                    mediaIdWhatsapp: targetProd.mediaIdWhatsapp || '',
+                    imageCaption: targetProd.imageCaption || ''
                 })
             });
             if (res.ok) {
-                const updated = [...productsConfig];
-                updated[index].aiEnabled = updatedVal;
-                setProductsConfig(updated);
-                showAlert('success', `Producto ${updatedVal ? 'activado' : 'desactivado'} para la IA.`);
+                const updatedConfig = [...productsConfig];
+                updatedConfig[index].aiEnabled = newVal;
+                setProductsConfig(updatedConfig);
+                showAlert('success', `Producto ${newVal ? 'activado' : 'desactivado'} para la IA.`);
             }
         } catch (err) {
             console.error(err);
@@ -192,10 +290,10 @@ export default function ConfigPage() {
     const handleConfigureProduct = (prod) => {
         setEditingProduct({
             ...prod,
+            intent: prod.intent || '',
             priority: prod.priority || 100,
             searchKeywords: prod.searchKeywords || '',
             customAiDescription: prod.customAiDescription || '',
-            intent: prod.intent || '',
             mediaIdWhatsapp: prod.mediaIdWhatsapp || '',
             imageCaption: prod.imageCaption || ''
         });
@@ -248,16 +346,16 @@ export default function ConfigPage() {
 
     const handleSaveCoverage = async (e) => {
         e.preventDefault();
-        const data = editingCoverage || newCoverage;
+        const payload = editingCoverage || newCoverage;
         try {
             const res = await fetch(`${API_BASE}/api/ai/shipping-coverage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
+                body: JSON.stringify(payload)
             });
             if (res.ok) {
-                const updatedRes = await fetch(`${API_BASE}/api/ai/shipping-coverage`);
-                if (updatedRes.ok) setShippingCoverage(await updatedRes.json());
+                const refreshedRes = await fetch(`${API_BASE}/api/ai/shipping-coverage`);
+                if (refreshedRes.ok) setShippingCoverage(await refreshedRes.json());
                 setShowCoverageModal(false);
                 setNewCoverage({ districtName: '', deliveryFee: 0, minOrderAmount: 0, isActive: true, aliases: '' });
                 setEditingCoverage(null);
@@ -283,7 +381,7 @@ export default function ConfigPage() {
         }
     };
 
-    // FAQs (Knowledge Base) Handlers
+    // FAQ Handlers
     const handleConfigureFaq = (faq) => {
         setEditingFaq({ ...faq });
         setShowFaqModal(true);
@@ -291,12 +389,12 @@ export default function ConfigPage() {
 
     const handleSaveFaq = async (e) => {
         e.preventDefault();
-        const data = editingFaq || newFaq;
+        const payload = editingFaq || newFaq;
         try {
             const res = await fetch(`${API_BASE}/api/ai/knowledge-base`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
+                body: JSON.stringify(payload)
             });
             if (res.ok) {
                 const updatedRes = await fetch(`${API_BASE}/api/ai/knowledge-base`);
@@ -338,7 +436,7 @@ export default function ConfigPage() {
     }
 
     return (
-        <Container fluid="xxl" className="pt-7">
+        <Container fluid className="pt-4">
             <Row className="mb-4">
                 <Col>
                     <div className="hk-pg-header">
@@ -368,178 +466,10 @@ export default function ConfigPage() {
                 className="mb-4 hk-tabs"
                 variant="pills"
             >
-                {/* PESTAÑA 1: CONFIGURACIÓN GENERAL */}
+                {/* PESTAÑA 1: CREDENCIALES GENERALES */}
                 <Tab eventKey="general" title={<span><Icons.Settings size={18} className="me-1" /> General</span>}>
                     <Form onSubmit={handleSaveGeneral}>
-                        <Row className="row-cols-1 row-cols-lg-2 g-4">
-                            {/* Ajustes de Identidad IA */}
-                            <Col>
-                                <Card className="shadow-sm border-0 h-100" style={{ borderRadius: '12px' }}>
-                                    <Card.Header className="bg-primary-subtle text-primary-emphasis border-0 py-3 d-flex align-items-center gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
-                                        <Icons.User size={24} />
-                                        <h5 className="mb-0 fw-bold">Identidad del Agente de IA</h5>
-                                    </Card.Header>
-                                    <Card.Body className="p-4">
-                                        <Form.Group className="mb-4 d-flex align-items-center justify-content-between p-3 bg-light rounded" controlId="aiActive">
-                                            <div>
-                                                <Form.Label className="fw-bold mb-0 d-block">🟢 Agente de IA Activo</Form.Label>
-                                                <Form.Text className="text-muted small">Enciende o apaga las respuestas automáticas globales por WhatsApp.</Form.Text>
-                                            </div>
-                                            <Form.Check
-                                                type="switch"
-                                                id="ai-active-switch"
-                                                checked={settings['ai.active'] === 'true'}
-                                                onChange={(e) => setSettings(prev => ({ ...prev, 'ai.active': e.target.checked ? 'true' : 'false' }))}
-                                                style={{ fontSize: '1.5rem', cursor: 'pointer' }}
-                                            />
-                                        </Form.Group>
-
-                                        <Form.Group className="mb-3" controlId="aiAgentName">
-                                            <Form.Label className="fw-semibold small">Nombre del Agente</Form.Label>
-                                            <Form.Control
-                                                type="text"
-                                                name="ai.agent.name"
-                                                value={settings['ai.agent.name']}
-                                                onChange={handleSettingChange}
-                                                placeholder="Ej. Antarqui Bot"
-                                                className="form-control-lg"
-                                                style={{ fontSize: '0.9rem' }}
-                                            />
-                                        </Form.Group>
-
-                                        <Form.Group className="mb-3" controlId="aiBusinessDesc">
-                                            <Form.Label className="fw-semibold small">Giro / Descripción del Negocio</Form.Label>
-                                            <Form.Control
-                                                as="textarea"
-                                                rows={3}
-                                                name="ai.business.description"
-                                                value={settings['ai.business.description']}
-                                                onChange={handleSettingChange}
-                                                placeholder="Ej. Empresa peruana distribuidora de agua alcalina ionizada pH 8.2 con delivery gratis..."
-                                                style={{ fontSize: '0.9rem' }}
-                                            />
-                                        </Form.Group>
-
-                                        <Form.Group className="mb-3" controlId="aiTone">
-                                            <Form.Label className="fw-semibold small">Tono de Comunicación</Form.Label>
-                                            <Form.Select
-                                                name="ai.tone"
-                                                value={settings['ai.tone']}
-                                                onChange={handleSettingChange}
-                                                className="form-control-lg"
-                                                style={{ fontSize: '0.9rem' }}
-                                            >
-                                                <option value="Amigable y cercano">Amigable y cercano</option>
-                                                <option value="Profesional y formal">Profesional y formal</option>
-                                                <option value="Directo y conciso">Directo y conciso</option>
-                                                <option value="Entusiasta y alegre">Entusiasta y alegre</option>
-                                            </Form.Select>
-                                        </Form.Group>
-
-                                        <Form.Group className="mb-3" controlId="aiMaxQuota">
-                                            <Form.Label className="fw-semibold small">Límite diario de respuestas automáticas (por cliente)</Form.Label>
-                                            <Form.Control
-                                                type="number"
-                                                name="ai.max.quota"
-                                                value={settings['ai.max.quota'] || '30'}
-                                                onChange={handleSettingChange}
-                                                placeholder="Ej. 30"
-                                                min="1"
-                                                max="500"
-                                                className="form-control-lg"
-                                                style={{ fontSize: '0.9rem' }}
-                                            />
-                                            <Form.Text className="text-muted small">
-                                                Desactiva el chatbot para un contacto si supera esta cantidad de respuestas del bot en 24h para evitar bucles de spam.
-                                            </Form.Text>
-                                        </Form.Group>
-                                    </Card.Body>
-                                </Card>
-                            </Col>
-
-                            {/* Ajustes de Google Gemini API */}
-                            <Col>
-                                <Card className="shadow-sm border-0 h-100" style={{ borderRadius: '12px' }}>
-                                    <Card.Header className="bg-success-subtle text-success-emphasis border-0 py-3 d-flex align-items-center gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
-                                        <Icons.Cpu size={24} />
-                                        <h5 className="mb-0 fw-bold">Google Gemini AI & Reglas</h5>
-                                    </Card.Header>
-                                    <Card.Body className="p-4">
-                                        <Form.Group className="mb-3" controlId="geminiKey">
-                                            <Form.Label className="fw-semibold small">Google Gemini API Key</Form.Label>
-                                            <InputGroup>
-                                                <Form.Control
-                                                    type={showGemini ? "text" : "password"}
-                                                    name="gemini.api.key"
-                                                    value={settings['gemini.api.key']}
-                                                    onChange={handleSettingChange}
-                                                    placeholder="AIzaSy..."
-                                                    className="form-control-lg"
-                                                    style={{ fontSize: '0.9rem' }}
-                                                />
-                                                <Button variant="outline-secondary" onClick={() => setShowGemini(!showGemini)} style={{ borderTopRightRadius: '8px', borderBottomRightRadius: '8px' }}>
-                                                    {showGemini ? <Icons.EyeOff size={18} /> : <Icons.Eye size={18} />}
-                                                </Button>
-                                            </InputGroup>
-                                        </Form.Group>
-
-                                        <Form.Group className="mb-3" controlId="geminiModel">
-                                            <Form.Label className="fw-semibold small">Modelo de Gemini</Form.Label>
-                                            <Form.Select
-                                                name="gemini.model_select"
-                                                value={['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'].includes(settings['gemini.model']) ? settings['gemini.model'] : 'custom'}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    if (val !== 'custom') {
-                                                        setSettings(prev => ({ ...prev, 'gemini.model': val }));
-                                                    } else {
-                                                        setSettings(prev => ({ ...prev, 'gemini.model': '' }));
-                                                    }
-                                                }}
-                                                className="form-control-lg mb-2"
-                                                style={{ fontSize: '0.9rem' }}
-                                            >
-                                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recomendado - Rápido y económico)</option>
-                                                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Última generación - Balanceado)</option>
-                                                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Complejo - Alta capacidad)</option>
-                                                <option value="custom">Otro modelo (Personalizado)...</option>
-                                            </Form.Select>
-                                            
-                                            {(!['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'].includes(settings['gemini.model'])) && (
-                                                <Form.Control
-                                                    type="text"
-                                                    name="gemini.model"
-                                                    value={settings['gemini.model'] || ''}
-                                                    onChange={handleSettingChange}
-                                                    placeholder="Ingrese el nombre exacto del modelo (ej: gemini-2.5-pro)"
-                                                    style={{ fontSize: '0.9rem' }}
-                                                    className="mb-1"
-                                                />
-                                            )}
-                                            <Form.Text className="text-muted small">
-                                                Modelo activo configurado: <strong className="text-success">{settings['gemini.model'] || 'gemini-1.5-flash (por defecto)'}</strong>
-                                            </Form.Text>
-                                        </Form.Group>
-
-                                        <Form.Group className="mb-3" controlId="geminiPrompt">
-                                            <Form.Label className="fw-semibold small">Reglas adicionales del Prompt (Instrucciones personalizadas)</Form.Label>
-                                            <Form.Control
-                                                as="textarea"
-                                                rows={5}
-                                                name="gemini.system.prompt"
-                                                value={settings['gemini.system.prompt']}
-                                                onChange={handleSettingChange}
-                                                placeholder="Ej. Ofrecer la promoción especial del pack de 3 recargas sólo si muestran interés en compras familiares..."
-                                                style={{ fontSize: '0.88rem', lineHeight: '1.4' }}
-                                            />
-                                        </Form.Group>
-                                    </Card.Body>
-                                </Card>
-                            </Col>
-                        </Row>
-
-                        {/* Credenciales Meta API */}
-                        <Row className="mt-4 g-4">
+                        <Row className="g-4">
                             <Col xs={12}>
                                 <Card className="shadow-sm border-0" style={{ borderRadius: '12px' }}>
                                     <Card.Header className="bg-light border-0 py-3 fw-bold">⚙️ Credenciales Meta WhatsApp API</Card.Header>
@@ -633,13 +563,868 @@ export default function ConfigPage() {
                         <div className="d-flex justify-content-end mt-4">
                             <Button variant="success" type="submit" size="lg" disabled={saving} style={{ borderRadius: '8px' }}>
                                 {saving ? <Spinner size="sm" className="me-2" /> : <Icons.DeviceFloppy size={18} className="me-2" />}
-                                Guardar Configuración General
+                                Guardar Credenciales WhatsApp
                             </Button>
                         </div>
                     </Form>
                 </Tab>
 
-                {/* PESTAÑA 2: CATÁLOGO DE PRODUCTOS IA */}
+                {/* PESTAÑA 2: CONSTRUCTOR VISUAL DE IA (FLOW BUILDER) */}
+                <Tab eventKey="ai_config" title={<span><Icons.Cpu size={18} className="me-1" /> Configuración de IA</span>}>
+                    <Form onSubmit={handleSaveGeneral}>
+                        <Row className="g-4">
+                            {/* Ajustes de Google Gemini API */}
+                            <Col xs={12}>
+                                <Card className="shadow-sm border-0" style={{ borderRadius: '12px' }}>
+                                    <Card.Header className="bg-success-subtle text-success-emphasis border-0 py-3 d-flex align-items-center gap-2" style={{ borderRadius: '12px 12px 0 0' }}>
+                                        <Icons.Cpu size={24} />
+                                        <h5 className="mb-0 fw-bold">Google Gemini AI & Reglas</h5>
+                                    </Card.Header>
+                                    <Card.Body className="p-4">
+                                        <Row className="row-cols-1 row-cols-md-2 g-3 align-items-end">
+                                            <Col>
+                                                <Form.Group className="mb-3" controlId="geminiKey">
+                                                    <Form.Label className="fw-semibold small">Google Gemini API Key</Form.Label>
+                                                    <InputGroup>
+                                                        <Form.Control
+                                                            type={showGemini ? "text" : "password"}
+                                                            name="gemini.api.key"
+                                                            value={settings['gemini.api.key']}
+                                                            onChange={handleSettingChange}
+                                                            placeholder="AIzaSy..."
+                                                            className="form-control-lg"
+                                                            style={{ fontSize: '0.9rem' }}
+                                                        />
+                                                        <Button variant="outline-secondary" onClick={() => setShowGemini(!showGemini)} style={{ borderTopRightRadius: '8px', borderBottomRightRadius: '8px' }}>
+                                                            {showGemini ? <Icons.EyeOff size={18} /> : <Icons.Eye size={18} />}
+                                                        </Button>
+                                                    </InputGroup>
+                                                </Form.Group>
+                                            </Col>
+
+                                            <Col>
+                                                <Form.Group className="mb-3" controlId="geminiModel">
+                                                    <Form.Label className="fw-semibold small">Modelo de Gemini</Form.Label>
+                                                    <Form.Select
+                                                        name="gemini.model_select"
+                                                        value={['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'].includes(settings['gemini.model']) ? settings['gemini.model'] : 'custom'}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            if (val !== 'custom') {
+                                                                setSettings(prev => ({ ...prev, 'gemini.model': val }));
+                                                            } else {
+                                                                setSettings(prev => ({ ...prev, 'gemini.model': '' }));
+                                                            }
+                                                        }}
+                                                        className="form-control-lg"
+                                                        style={{ fontSize: '0.9rem' }}
+                                                    >
+                                                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recomendado - Rápido y económico)</option>
+                                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Última generación - Balanceado)</option>
+                                                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Complejo - Alta capacidad)</option>
+                                                        <option value="custom">Otro modelo (Personalizado)...</option>
+                                                    </Form.Select>
+                                                </Form.Group>
+                                            </Col>
+                                        </Row>
+                                        
+                                        {(!['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-pro'].includes(settings['gemini.model'])) && (
+                                            <Form.Group className="mb-3" controlId="geminiCustomModel">
+                                                <Form.Label className="fw-semibold small">Nombre del Modelo Personalizado</Form.Label>
+                                                <Form.Control
+                                                    type="text"
+                                                    name="gemini.model"
+                                                    value={settings['gemini.model'] || ''}
+                                                    onChange={handleSettingChange}
+                                                    placeholder="Ingrese el nombre exacto del modelo (ej: gemini-2.5-pro)"
+                                                    style={{ fontSize: '0.9rem' }}
+                                                />
+                                            </Form.Group>
+                                        )}
+                                        <Form.Text className="text-muted small d-block mb-3">
+                                            Modelo activo configurado: <strong className="text-success">{settings['gemini.model'] || 'gemini-1.5-flash (por defecto)'}</strong>
+                                        </Form.Text>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+
+                            {/* FLOW BUILDER CANVAS */}
+                            <Col xs={12}>
+                                <Card className="shadow-sm border-0" style={{ borderRadius: '12px' }}>
+                                    <Card.Header className="bg-light border-0 py-3">
+                                        <h5 className="mb-1 fw-bold text-dark d-flex align-items-center gap-2">
+                                            <Icons.Settings size={22} className="text-success" />
+                                            Constructor Visual de Flujo Conversacional (Flow Builder)
+                                        </h5>
+                                        <p className="text-muted mb-0 small">Crea la secuencia del chatbot ordenando y editando cada paso del flujo.</p>
+                                    </Card.Header>
+                                    <Card.Body className="p-4 bg-light-subtle">
+                                        <Row className="g-4">
+                                            {/* LEFT SIDE: STEPS TIMELINE ORDERING */}
+                                            <Col lg={5} md={12}>
+                                                <div className="d-flex flex-column gap-2 p-3 rounded border bg-light" style={{ maxHeight: '720px', overflowY: 'auto' }}>
+                                                    {flowOrder.map((stepKey, idx) => {
+                                                        let title = '';
+                                                        let subtitle = '';
+                                                        let stepIcon = null;
+                                                        let activeBadge = true;
+
+                                                        if (stepKey === 'business') {
+                                                            title = 'Identidad del Bot';
+                                                            subtitle = `${settings['ai.agent.name'] || 'Asesor IA'} (${settings['ai.tone']})`;
+                                                            stepIcon = <Icons.User size={18} className="text-primary" />;
+                                                        } else if (stepKey === 'welcome') {
+                                                            title = 'Saludo Nuevo';
+                                                            subtitle = settings['ai.greeting.new'] || 'Sin saludo inicial';
+                                                            stepIcon = <Icons.Book size={18} className="text-success" />;
+                                                        } else if (stepKey === 'registered') {
+                                                            title = 'Saludo Registrado';
+                                                            subtitle = settings['ai.greeting.registered'] || 'Sin saludo registrado';
+                                                            stepIcon = <Icons.Book size={18} className="text-success" />;
+                                                        } else if (stepKey === 'location') {
+                                                            title = 'Pedir Ubicación GPS';
+                                                            subtitle = settings['ai.collect.location.text'] || 'Mensaje de solicitud';
+                                                            activeBadge = settings['ai.collect.location'] === 'true';
+                                                            stepIcon = <Icons.MapPin size={18} className="text-danger" />;
+                                                        } else if (stepKey === 'promotion') {
+                                                            title = 'Promoción Especial';
+                                                            subtitle = settings['ai.products.promotion.text'] || 'Sin promoción';
+                                                            activeBadge = settings['ai.products.promotion'] === 'true';
+                                                            stepIcon = <Icons.Photo size={18} className="text-warning" />;
+                                                        } else if (stepKey === 'billing') {
+                                                            title = 'Datos Factura/Boleta';
+                                                            subtitle = settings['ai.collect.document.text'] || 'Sin mensaje de comprobante';
+                                                            activeBadge = settings['ai.collect.document'] === 'true';
+                                                            stepIcon = <Icons.FileText size={18} className="text-info" />;
+                                                        } else if (stepKey === 'container') {
+                                                            title = 'Preguntar Envase';
+                                                            subtitle = settings['ai.ask.container.text'] || 'Sin mensaje de envase';
+                                                            activeBadge = settings['ai.ask.container'] === 'true';
+                                                            stepIcon = <Icons.Archive size={18} className="text-secondary" />;
+                                                        } else if (stepKey === 'payment') {
+                                                            title = 'Métodos de Pago';
+                                                            subtitle = settings['ai.payment.methods'] || 'Yape, Plin...';
+                                                            stepIcon = <Icons.DeviceFloppy size={18} className="text-success" />;
+                                                        } else if (stepKey === 'custom') {
+                                                            title = 'Instrucciones Especiales';
+                                                            subtitle = settings['ai.custom.instructions'] || 'Reglas adicionales';
+                                                            stepIcon = <Icons.Cpu size={18} className="text-dark" />;
+                                                        }
+
+                                                        return (
+                                                            <div
+                                                                key={stepKey}
+                                                                onClick={() => setActiveNode(stepKey)}
+                                                                className={`p-3 rounded border shadow-sm cursor-pointer transition-all ${activeNode === stepKey ? 'border-success bg-success-subtle shadow' : 'bg-white'} ${!activeBadge ? 'opacity-50' : ''}`}
+                                                                style={{ cursor: 'pointer', borderLeftWidth: activeNode === stepKey ? '4px' : '1px' }}
+                                                            >
+                                                                <div className="d-flex align-items-center justify-content-between">
+                                                                    <span className="fw-semibold d-flex align-items-center gap-2 text-dark">
+                                                                        {stepIcon}
+                                                                        {title}
+                                                                    </span>
+                                                                    <div className="d-flex align-items-center gap-2">
+                                                                        <Badge bg={activeBadge ? "success-subtle" : "secondary-subtle"} className={activeBadge ? "text-success" : "text-secondary"}>
+                                                                            {activeBadge ? 'Activo' : 'Desactivado'}
+                                                                        </Badge>
+                                                                        
+                                                                        <div className="d-flex align-items-center gap-1 bg-light px-1 py-0.5 rounded border">
+                                                                            <Button 
+                                                                                variant="link" 
+                                                                                size="sm" 
+                                                                                className="p-0 text-muted lh-1" 
+                                                                                disabled={idx === 0}
+                                                                                onClick={(e) => { e.stopPropagation(); handleMoveStep(idx, 'up'); }}
+                                                                                title="Subir paso"
+                                                                                style={{ textDecoration: 'none', fontSize: '0.7rem' }}
+                                                                            >
+                                                                                ▲
+                                                                            </Button>
+                                                                            <Button 
+                                                                                variant="link" 
+                                                                                size="sm" 
+                                                                                className="p-0 text-muted lh-1" 
+                                                                                disabled={idx === flowOrder.length - 1}
+                                                                                onClick={(e) => { e.stopPropagation(); handleMoveStep(idx, 'down'); }}
+                                                                                title="Bajar paso"
+                                                                                style={{ textDecoration: 'none', fontSize: '0.7rem' }}
+                                                                            >
+                                                                                ▼
+                                                                            </Button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <p className="text-muted small mt-2 mb-0 text-truncate">{subtitle}</p>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </Col>
+
+                                            {/* RIGHT SIDE: SELECTED STEP EDITOR */}
+                                            <Col lg={7} md={12}>
+                                                <Card className="border shadow-sm h-100">
+                                                    <Card.Header className="bg-white py-3 border-0 border-bottom d-flex justify-content-between align-items-center">
+                                                        <h6 className="fw-bold mb-0 text-dark">📝 Editor de Bloque: {activeNode.toUpperCase()}</h6>
+                                                        <Button 
+                                                            variant="success" 
+                                                            size="sm" 
+                                                            disabled={saving} 
+                                                            onClick={handleSaveGeneral}
+                                                            style={{ borderRadius: '6px' }}
+                                                        >
+                                                            {saving ? <Spinner size="sm" className="me-1" /> : <Icons.DeviceFloppy size={16} className="me-1" />}
+                                                            Guardar Bloque
+                                                        </Button>
+                                                    </Card.Header>
+                                                    <Card.Body className="p-4">
+                                                        {/* 1. NODE BUSINESS */}
+                                                        {activeNode === 'business' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="aiActive">
+                                                                    <Form.Label className="fw-semibold small">Agente Activo</Form.Label>
+                                                                    <Form.Check
+                                                                        type="switch"
+                                                                        id="ai-active-switch-flow"
+                                                                        checked={settings['ai.active'] === 'true'}
+                                                                        onChange={(e) => setSettings(prev => ({ ...prev, 'ai.active': e.target.checked ? 'true' : 'false' }))}
+                                                                        label="Permitir respuestas automáticas del bot de IA"
+                                                                    />
+                                                                </Form.Group>
+
+                                                                <Form.Group className="mb-3" controlId="aiAgentName">
+                                                                    <Form.Label className="fw-semibold small">Nombre del Agente</Form.Label>
+                                                                    <Form.Control
+                                                                        type="text"
+                                                                        name="ai.agent.name"
+                                                                        value={settings['ai.agent.name']}
+                                                                        onChange={handleSettingChange}
+                                                                        placeholder="Ej. Antarqui Bot"
+                                                                    />
+                                                                </Form.Group>
+
+                                                                <Form.Group className="mb-3" controlId="aiBusinessType">
+                                                                    <Form.Label className="fw-semibold small">Flujo de Negocio (Giro)</Form.Label>
+                                                                    <Form.Select
+                                                                        name="ai.business.type"
+                                                                        value={settings['ai.business.type'] || 'ECOMMERCE'}
+                                                                        onChange={handleSettingChange}
+                                                                    >
+                                                                        <option value="ECOMMERCE">E-commerce (Venta y entrega de productos del catálogo)</option>
+                                                                        <option value="SERVICES">Servicios (Cotizaciones y reserva de citas)</option>
+                                                                        <option value="RESERVATIONS">Reservaciones (Restaurantes, Hoteles y Mesas)</option>
+                                                                        <option value="LEADS">Leads B2B (Fidelización y toma de datos de contacto)</option>
+                                                                    </Form.Select>
+                                                                </Form.Group>
+
+                                                                <Form.Group className="mb-3" controlId="aiBusinessDesc">
+                                                                    <Form.Label className="fw-semibold small">Giro / Descripción de la Empresa</Form.Label>
+                                                                    <Form.Control
+                                                                        as="textarea"
+                                                                        rows={3}
+                                                                        name="ai.business.description"
+                                                                        value={settings['ai.business.description']}
+                                                                        onChange={handleSettingChange}
+                                                                        placeholder="Escribe a qué se dedica la empresa..."
+                                                                    />
+                                                                </Form.Group>
+
+                                                                <Form.Group className="mb-3" controlId="aiTone">
+                                                                    <Form.Label className="fw-semibold small">Tono de Comunicación del Bot</Form.Label>
+                                                                    <Form.Select
+                                                                        name="ai.tone"
+                                                                        value={settings['ai.tone']}
+                                                                        onChange={handleSettingChange}
+                                                                    >
+                                                                        <option value="Amigable y cercano">Amigable y cercano</option>
+                                                                        <option value="Profesional y formal">Profesional y formal</option>
+                                                                        <option value="Directo y conciso">Directo y conciso</option>
+                                                                        <option value="Entusiasta y alegre">Entusiasta y alegre</option>
+                                                                    </Form.Select>
+                                                                </Form.Group>
+
+                                                                <Form.Group className="mb-3" controlId="aiMaxQuota">
+                                                                    <Form.Label className="fw-semibold small">Límite Diario de Mensajes por Cliente</Form.Label>
+                                                                    <Form.Control
+                                                                        type="number"
+                                                                        name="ai.max.quota"
+                                                                        value={settings['ai.max.quota'] || '30'}
+                                                                        onChange={handleSettingChange}
+                                                                        placeholder="Ej: 30"
+                                                                    />
+                                                                </Form.Group>
+                                                            </div>
+                                                        )}
+
+                                                        {/* 2. NODE WELCOME GREETING */}
+                                                        {activeNode === 'welcome' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="welcomeText">
+                                                                    <Form.Label className="fw-semibold small">Mensaje de Saludo para Clientes Nuevos</Form.Label>
+                                                                    <Form.Control
+                                                                        as="textarea"
+                                                                        rows={5}
+                                                                        name="ai.greeting.new"
+                                                                        value={settings['ai.greeting.new']}
+                                                                        onChange={handleSettingChange}
+                                                                    />
+                                                                </Form.Group>
+
+                                                                <Form.Group className="mb-3" controlId="welcomeMediaType">
+                                                                    <Form.Label className="fw-semibold small">Adjunto Multimedia (Imagen)</Form.Label>
+                                                                    <Form.Select
+                                                                        name="ai.greeting.new.media.type"
+                                                                        value={settings['ai.greeting.new.media.type'] || 'NONE'}
+                                                                        onChange={handleSettingChange}
+                                                                    >
+                                                                        <option value="NONE">Ninguno (Sólo Texto)</option>
+                                                                        <option value="IMAGE">Imagen (WhatsApp Media ID o URL)</option>
+                                                                    </Form.Select>
+                                                                </Form.Group>
+
+                                                                {settings['ai.greeting.new.media.type'] === 'IMAGE' && (
+                                                                    <Form.Group className="mb-3" controlId="welcomeMediaIds">
+                                                                        <Form.Label className="fw-semibold small">Media IDs o URLs de Imágenes (separadas por coma)</Form.Label>
+                                                                        <Form.Control
+                                                                            type="text"
+                                                                            name="ai.greeting.new.media.ids"
+                                                                            value={settings['ai.greeting.new.media.ids'] || ''}
+                                                                            onChange={handleSettingChange}
+                                                                            placeholder="Ej: 128763529384, https://tu-sitio.com/banner.jpg"
+                                                                        />
+                                                                        
+                                                                        {/* Catalog Selector Dropdown */}
+                                                                        <div className="mt-3 bg-light p-2 rounded border">
+                                                                            <Form.Label className="small fw-semibold d-block text-muted">⚡ Seleccionar rápido desde Catálogo de Ventas:</Form.Label>
+                                                                            {productsConfig.length > 0 ? (
+                                                                                <Form.Select
+                                                                                    size="sm"
+                                                                                    value=""
+                                                                                    onChange={(e) => {
+                                                                                        const val = e.target.value;
+                                                                                        if (!val) return;
+                                                                                        const current = settings['ai.greeting.new.media.ids'] || '';
+                                                                                        if (current.includes(val)) return;
+                                                                                        const updated = current.trim() === '' ? val : `${current}, ${val}`;
+                                                                                        
+                                                                                        const prod = productsConfig.find(p => {
+                                                                                            const url = `${API_BASE}/api/productos/${p.productoId}/imagen`;
+                                                                                            return p.mediaIdWhatsapp === val || url === val;
+                                                                                        });
+                                                                                        const detailsText = prod ? `\n\n*${prod.productName}*\n💵 *Precio:* S/ ${prod.productPrice}\n${prod.customAiDescription || ''}` : '';
+                                                                                        
+                                                                                        setSettings(prev => ({ 
+                                                                                            ...prev, 
+                                                                                            'ai.greeting.new.media.ids': updated,
+                                                                                            'ai.greeting.new': (prev['ai.greeting.new'] || '') + detailsText
+                                                                                        }));
+                                                                                    }}
+                                                                                >
+                                                                                    <option value="">-- Selecciona una imagen del catálogo --</option>
+                                                                                    {productsConfig.map(p => {
+                                                                                        const url = `${API_BASE}/api/productos/${p.productoId}/imagen`;
+                                                                                        const finalVal = p.mediaIdWhatsapp && p.mediaIdWhatsapp.trim() !== '' ? p.mediaIdWhatsapp : url;
+                                                                                        return <option key={p.productoId} value={finalVal}>{p.productName} ({p.mediaIdWhatsapp ? 'ID WhatsApp' : 'URL Imagen'})</option>;
+                                                                                    })}
+                                                                                </Form.Select>
+                                                                            ) : (
+                                                                                <span className="text-muted small">Cargando catálogo...</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </Form.Group>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* 3. NODE REGISTERED GREETING */}
+                                                        {activeNode === 'registered' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="registeredText">
+                                                                    <Form.Label className="fw-semibold small">Mensaje de Saludo para Clientes Registrados</Form.Label>
+                                                                    <Form.Control
+                                                                        as="textarea"
+                                                                        rows={5}
+                                                                        name="ai.greeting.registered"
+                                                                        value={settings['ai.greeting.registered']}
+                                                                        onChange={handleSettingChange}
+                                                                    />
+                                                                </Form.Group>
+
+                                                                <Form.Group className="mb-3" controlId="registeredMediaType">
+                                                                    <Form.Label className="fw-semibold small">Adjunto Multimedia (Imagen)</Form.Label>
+                                                                    <Form.Select
+                                                                        name="ai.greeting.registered.media.type"
+                                                                        value={settings['ai.greeting.registered.media.type'] || 'NONE'}
+                                                                        onChange={handleSettingChange}
+                                                                    >
+                                                                        <option value="NONE">Ninguno (Sólo Texto)</option>
+                                                                        <option value="IMAGE">Imagen (WhatsApp Media ID o URL)</option>
+                                                                    </Form.Select>
+                                                                </Form.Group>
+
+                                                                {settings['ai.greeting.registered.media.type'] === 'IMAGE' && (
+                                                                    <Form.Group className="mb-3" controlId="registeredMediaIds">
+                                                                        <Form.Label className="fw-semibold small">Media IDs o URLs de Imágenes (separadas por coma)</Form.Label>
+                                                                        <Form.Control
+                                                                            type="text"
+                                                                            name="ai.greeting.registered.media.ids"
+                                                                            value={settings['ai.greeting.registered.media.ids'] || ''}
+                                                                            onChange={handleSettingChange}
+                                                                            placeholder="Ej: 128763529384, https://tu-sitio.com/banner.jpg"
+                                                                        />
+
+                                                                        {/* Catalog Selector Dropdown */}
+                                                                        <div className="mt-3 bg-light p-2 rounded border">
+                                                                            <Form.Label className="small fw-semibold d-block text-muted">⚡ Seleccionar rápido desde Catálogo de Ventas:</Form.Label>
+                                                                            {productsConfig.length > 0 ? (
+                                                                                <Form.Select
+                                                                                    size="sm"
+                                                                                    value=""
+                                                                                    onChange={(e) => {
+                                                                                        const val = e.target.value;
+                                                                                        if (!val) return;
+                                                                                        const current = settings['ai.greeting.registered.media.ids'] || '';
+                                                                                        if (current.includes(val)) return;
+                                                                                        const updated = current.trim() === '' ? val : `${current}, ${val}`;
+                                                                                        
+                                                                                        const prod = productsConfig.find(p => {
+                                                                                            const url = `${API_BASE}/api/productos/${p.productoId}/imagen`;
+                                                                                            return p.mediaIdWhatsapp === val || url === val;
+                                                                                        });
+                                                                                        const detailsText = prod ? `\n\n*${prod.productName}*\n💵 *Precio:* S/ ${prod.productPrice}\n${prod.customAiDescription || ''}` : '';
+                                                                                        
+                                                                                        setSettings(prev => ({ 
+                                                                                            ...prev, 
+                                                                                            'ai.greeting.registered.media.ids': updated,
+                                                                                            'ai.greeting.registered': (prev['ai.greeting.registered'] || '') + detailsText
+                                                                                        }));
+                                                                                    }}
+                                                                                >
+                                                                                    <option value="">-- Selecciona una imagen del catálogo --</option>
+                                                                                    {productsConfig.map(p => {
+                                                                                        const url = `${API_BASE}/api/productos/${p.productoId}/imagen`;
+                                                                                        const finalVal = p.mediaIdWhatsapp && p.mediaIdWhatsapp.trim() !== '' ? p.mediaIdWhatsapp : url;
+                                                                                        return <option key={p.productoId} value={finalVal}>{p.productName} ({p.mediaIdWhatsapp ? 'ID WhatsApp' : 'URL Imagen'})</option>;
+                                                                                    })}
+                                                                                </Form.Select>
+                                                                            ) : (
+                                                                                <span className="text-muted small">Cargando catálogo...</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </Form.Group>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* 4. NODE LOCATION GPS */}
+                                                        {activeNode === 'location' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="collectLoc">
+                                                                    <Form.Check
+                                                                        type="switch"
+                                                                        id="collect-location-switch"
+                                                                        checked={settings['ai.collect.location'] === 'true'}
+                                                                        onChange={(e) => setSettings(prev => ({ ...prev, 'ai.collect.location': e.target.checked ? 'true' : 'false' }))}
+                                                                        label="Solicitar Ubicación GPS nativa por WhatsApp"
+                                                                        className="fw-bold mb-3 text-danger"
+                                                                    />
+                                                                </Form.Group>
+
+                                                                {settings['ai.collect.location'] === 'true' && (
+                                                                    <Form.Group className="mb-3" controlId="collectLocText">
+                                                                        <Form.Label className="fw-semibold small">Instrucciones / Mensaje de solicitud</Form.Label>
+                                                                        <Form.Control
+                                                                            as="textarea"
+                                                                            rows={4}
+                                                                            name="ai.collect.location.text"
+                                                                            value={settings['ai.collect.location.text']}
+                                                                            onChange={handleSettingChange}
+                                                                        />
+                                                                    </Form.Group>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* 5. NODE PROMOTION */}
+                                                        {activeNode === 'promotion' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="productsPromo">
+                                                                    <Form.Check
+                                                                        type="switch"
+                                                                        id="products-promotion-switch"
+                                                                        checked={settings['ai.products.promotion'] === 'true'}
+                                                                        onChange={(e) => setSettings(prev => ({ ...prev, 'ai.products.promotion': e.target.checked ? 'true' : 'false' }))}
+                                                                        label="Ofrecer Promoción de entrada automáticamente"
+                                                                        className="fw-bold mb-3 text-warning"
+                                                                    />
+                                                                </Form.Group>
+
+                                                                {settings['ai.products.promotion'] === 'true' && (
+                                                                    <>
+                                                                        <Form.Group className="mb-3" controlId="promoText">
+                                                                            <Form.Label className="fw-semibold small">Mensaje / Contenido de la Promoción</Form.Label>
+                                                                            <Form.Control
+                                                                                as="textarea"
+                                                                                rows={4}
+                                                                                name="ai.products.promotion.text"
+                                                                                value={settings['ai.products.promotion.text']}
+                                                                                onChange={handleSettingChange}
+                                                                            />
+                                                                        </Form.Group>
+
+                                                                        <Form.Group className="mb-3" controlId="promoKeywords">
+                                                                            <Form.Label className="fw-semibold small">Palabras Clave de Activación (separadas por comas)</Form.Label>
+                                                                            <Form.Control
+                                                                                type="text"
+                                                                                name="ai.products.promotion.keywords"
+                                                                                value={settings['ai.products.promotion.keywords'] || ''}
+                                                                                onChange={handleSettingChange}
+                                                                                placeholder="Ej: promocion, descuento, oferta, combo, pack"
+                                                                            />
+                                                                            <Form.Text className="text-muted small">
+                                                                                La IA ofrecerá esta promoción cuando detecte intenciones o palabras similares a las ingresadas aquí.
+                                                                            </Form.Text>
+                                                                        </Form.Group>
+
+                                                                        <Form.Group className="mb-3" controlId="promoMediaType">
+                                                                            <Form.Label className="fw-semibold small">Adjunto Multimedia (Imagen)</Form.Label>
+                                                                            <Form.Select
+                                                                                name="ai.products.promotion.media.type"
+                                                                                value={settings['ai.products.promotion.media.type'] || 'NONE'}
+                                                                                onChange={handleSettingChange}
+                                                                            >
+                                                                                <option value="NONE">Ninguno (Sólo Texto)</option>
+                                                                                <option value="IMAGE">Imagen promocional (WhatsApp Media ID o URL)</option>
+                                                                            </Form.Select>
+                                                                        </Form.Group>
+
+                                                                        {settings['ai.products.promotion.media.type'] === 'IMAGE' && (
+                                                                            <Form.Group className="mb-3" controlId="promoMediaIds">
+                                                                                <Form.Label className="fw-semibold small">Media IDs o URLs de Imágenes (separadas por coma)</Form.Label>
+                                                                                <Form.Control
+                                                                                    type="text"
+                                                                                    name="ai.products.promotion.media.ids"
+                                                                                    value={settings['ai.products.promotion.media.ids'] || ''}
+                                                                                    onChange={handleSettingChange}
+                                                                                    placeholder="Ej: 128763529384, https://tu-sitio.com/banner.jpg"
+                                                                                />
+
+                                                                                {/* Catalog Selector Dropdown */}
+                                                                                <div className="mt-3 bg-light p-2 rounded border">
+                                                                                    <Form.Label className="small fw-semibold d-block text-muted">⚡ Seleccionar rápido desde Catálogo de Ventas:</Form.Label>
+                                                                                    {productsConfig.length > 0 ? (
+                                                                                        <Form.Select
+                                                                                            size="sm"
+                                                                                            value=""
+                                                                                            onChange={(e) => {
+                                                                                                const val = e.target.value;
+                                                                                                if (!val) return;
+                                                                                                const current = settings['ai.products.promotion.media.ids'] || '';
+                                                                                                if (current.includes(val)) return;
+                                                                                                const updated = current.trim() === '' ? val : `${current}, ${val}`;
+                                                                                                
+                                                                                                const prod = productsConfig.find(p => {
+                                                                                                    const url = `${API_BASE}/api/productos/${p.productoId}/imagen`;
+                                                                                                    return p.mediaIdWhatsapp === val || url === val;
+                                                                                                });
+                                                                                                const detailsText = prod ? `\n\n*${prod.productName}*\n💵 *Precio:* S/ ${prod.productPrice}\n${prod.customAiDescription || ''}` : '';
+                                                                                                
+                                                                                                setSettings(prev => ({ 
+                                                                                                    ...prev, 
+                                                                                                    'ai.products.promotion.media.ids': updated,
+                                                                                                    'ai.products.promotion.text': (prev['ai.products.promotion.text'] || '') + detailsText
+                                                                                                }));
+                                                                                            }}
+                                                                                        >
+                                                                                            <option value="">-- Selecciona una imagen del catálogo --</option>
+                                                                                            {productsConfig.map(p => {
+                                                                                                const url = `${API_BASE}/api/productos/${p.productoId}/imagen`;
+                                                                                                const finalVal = p.mediaIdWhatsapp && p.mediaIdWhatsapp.trim() !== '' ? p.mediaIdWhatsapp : url;
+                                                                                                return <option key={p.productoId} value={finalVal}>{p.productName} ({p.mediaIdWhatsapp ? 'ID WhatsApp' : 'URL Imagen'})</option>;
+                                                                                            })}
+                                                                                        </Form.Select>
+                                                                                    ) : (
+                                                                                        <span className="text-muted small">Cargando catálogo...</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            </Form.Group>
+                                                                        )}
+
+                                                                        <Form.Group className="mb-3" controlId="promoPostText">
+                                                                            <Form.Label className="fw-semibold small">Mensaje Posterior (Enviar después de las imágenes)</Form.Label>
+                                                                            <Form.Control
+                                                                                as="textarea"
+                                                                                rows={3}
+                                                                                name="ai.products.promotion.post.text"
+                                                                                value={settings['ai.products.promotion.post.text'] || ''}
+                                                                                onChange={handleSettingChange}
+                                                                                placeholder="Ej: ¿Te gustaría llevar alguna de estas promociones o prefieres ver otros productos? 💧"
+                                                                            />
+                                                                            <Form.Text className="text-muted small">
+                                                                                Este texto opcional se enviará como un mensaje independiente justo después de enviar todas las imágenes de la promoción.
+                                                                            </Form.Text>
+                                                                        </Form.Group>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* 6. NODE BILLING */}
+                                                        {activeNode === 'billing' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="collectDoc">
+                                                                    <Form.Check
+                                                                        type="switch"
+                                                                        id="collect-document-switch"
+                                                                        checked={settings['ai.collect.document'] === 'true'}
+                                                                        onChange={(e) => setSettings(prev => ({ ...prev, 'ai.collect.document': e.target.checked ? 'true' : 'false' }))}
+                                                                        label="Solicitar Datos de Facturación (Boleta/Factura, DNI/RUC)"
+                                                                        className="fw-bold mb-3 text-info"
+                                                                    />
+                                                                </Form.Group>
+
+                                                                {settings['ai.collect.document'] === 'true' && (
+                                                                    <Form.Group className="mb-3" controlId="collectDocText">
+                                                                        <Form.Label className="fw-semibold small">Instrucciones de captura de datos</Form.Label>
+                                                                        <Form.Control
+                                                                            as="textarea"
+                                                                            rows={4}
+                                                                            name="ai.collect.document.text"
+                                                                            value={settings['ai.collect.document.text']}
+                                                                            onChange={handleSettingChange}
+                                                                        />
+                                                                    </Form.Group>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* 7. NODE CONTAINER */}
+                                                        {activeNode === 'container' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="askContainer">
+                                                                    <Form.Check
+                                                                        type="switch"
+                                                                        id="ask-container-switch"
+                                                                        checked={settings['ai.ask.container'] === 'true'}
+                                                                        onChange={(e) => setSettings(prev => ({ ...prev, 'ai.ask.container': e.target.checked ? 'true' : 'false' }))}
+                                                                        label="Preguntar si cuenta con Envase Retornable de 20L"
+                                                                        className="fw-bold mb-3 text-secondary"
+                                                                    />
+                                                                </Form.Group>
+
+                                                                {settings['ai.ask.container'] === 'true' && (
+                                                                    <Form.Group className="mb-3" controlId="askContainerText">
+                                                                        <Form.Label className="fw-semibold small">Regla e Instrucción de Envase</Form.Label>
+                                                                        <Form.Control
+                                                                            as="textarea"
+                                                                            rows={4}
+                                                                            name="ai.ask.container.text"
+                                                                            value={settings['ai.ask.container.text']}
+                                                                            onChange={handleSettingChange}
+                                                                        />
+                                                                    </Form.Group>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* 8. NODE PAYMENT */}
+                                                        {activeNode === 'payment' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="paymentMethods">
+                                                                    <Form.Label className="fw-semibold small">Métodos de Pago Autorizados</Form.Label>
+                                                                    <Form.Control
+                                                                        type="text"
+                                                                        name="ai.payment.methods"
+                                                                        value={settings['ai.payment.methods']}
+                                                                        onChange={handleSettingChange}
+                                                                        placeholder="Ej: Yape, Plin, Efectivo contra entrega"
+                                                                    />
+                                                                </Form.Group>
+                                                            </div>
+                                                        )}
+
+                                                        {/* 9. NODE CUSTOM */}
+                                                        {activeNode === 'custom' && (
+                                                            <div>
+                                                                <Form.Group className="mb-3" controlId="customInstructions">
+                                                                    <Form.Label className="fw-semibold small">Instrucciones Adicionales del Sistema (Directivas)</Form.Label>
+                                                                    <Form.Control
+                                                                        as="textarea"
+                                                                        rows={6}
+                                                                        name="ai.custom.instructions"
+                                                                        value={settings['ai.custom.instructions']}
+                                                                        onChange={handleSettingChange}
+                                                                        placeholder="Agrega reglas específicas para afinar las respuestas de la IA..."
+                                                                    />
+                                                                </Form.Group>
+                                                            </div>
+                                                        )}
+
+                                                        {/* WHATSAPP MESSAGE SIMULATION FOR PREVIEW */}
+                                                        <hr className="my-4" />
+                                                        <h6 className="fw-bold small text-muted mb-2">👁️ Simulador en WhatsApp:</h6>
+                                                        <div className="p-3 rounded shadow-inner" style={{ backgroundColor: '#efeae2', backgroundImage: 'radial-gradient(#dfdcd6 10%, transparent 11%)', backgroundSize: '10px 10px', border: '1px solid #cbd5e1' }}>
+                                                            {/* Render welcome mock */}
+                                                            {activeNode === 'welcome' && (
+                                                                <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                    <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                        {settings['ai.greeting.new.media.type'] === 'IMAGE' && renderPreviewImages(settings['ai.greeting.new.media.ids'])}
+                                                                        <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                        <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                            {formatWhatsappText(settings['ai.greeting.new'])}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Render registered mock */}
+                                                            {activeNode === 'registered' && (
+                                                                <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                    <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                        {settings['ai.greeting.registered.media.type'] === 'IMAGE' && renderPreviewImages(settings['ai.greeting.registered.media.ids'])}
+                                                                        <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                        <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                            {formatWhatsappText(settings['ai.greeting.registered'].replace('[Nombre]', 'Juan Carlos'))}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Render GPS location mock */}
+                                                            {activeNode === 'location' && (
+                                                                <>
+                                                                    <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                        <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                            <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                            <span className="text-dark" style={{ fontSize: '0.82rem' }}>
+                                                                                {formatWhatsappText(settings['ai.collect.location.text'])}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="d-flex flex-column align-items-end mb-1">
+                                                                        <div className="p-2 rounded text-dark position-relative shadow-sm small" style={{ maxWidth: '85%', backgroundColor: '#d9fdd3', borderRadius: '10px 0px 10px 10px' }}>
+                                                                            <span className="fw-semibold text-primary d-block mb-1" style={{ fontSize: '0.7rem' }}>👤 Cliente:</span>
+                                                                            <div className="d-flex align-items-center gap-2 bg-light p-2 rounded border small">
+                                                                                <span style={{ fontSize: '1.2rem' }}>📍</span>
+                                                                                <div className="text-start">
+                                                                                    <strong style={{ fontSize: '0.72rem' }}>Ubicación compartida</strong>
+                                                                                    <br />
+                                                                                    <span className="text-muted" style={{ fontSize: '0.62rem' }}>Ver mapa en WhatsApp</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </>
+                                                            )}
+
+                                                            {/* Render promotion mock */}
+                                                            {activeNode === 'promotion' && (
+                                                                <>
+                                                                    <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                        <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                            <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                            <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                                {formatWhatsappText(settings['ai.products.promotion.text'])}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {settings['ai.products.promotion.media.type'] === 'IMAGE' && settings['ai.products.promotion.media.ids'] && (
+                                                                        settings['ai.products.promotion.media.ids'].split(',').map((item, idx) => {
+                                                                            const trimmed = item.trim();
+                                                                            if (!trimmed) return null;
+                                                                            const src = getImageUrlForMediaId(trimmed);
+                                                                            
+                                                                            // Find matching product in productsConfig
+                                                                            const isUrl = trimmed.startsWith('http') || trimmed.startsWith('data:') || trimmed.startsWith('/');
+                                                                            const prod = productsConfig.find(p => 
+                                                                                (p.mediaIdWhatsapp && String(p.mediaIdWhatsapp).trim() === trimmed) ||
+                                                                                (isUrl && p.productoId && trimmed.includes(`/api/productos/${p.productoId}/imagen`))
+                                                                            );
+
+                                                                            return (
+                                                                                <div key={idx} className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                                    <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                                        <div className="overflow-hidden rounded border text-center bg-light shadow-sm mb-2" style={{ width: '100%', maxHeight: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                            <img 
+                                                                                                src={src} 
+                                                                                                alt={`Preview ${idx}`} 
+                                                                                                style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain' }}
+                                                                                            />
+                                                                                        </div>
+                                                                                        {prod ? (
+                                                                                            <div className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                                                {formatWhatsappText(`*${prod.productName}*\n💵 *Precio:* S/ ${prod.productPrice}\n${prod.customAiDescription || ''}`)}
+                                                                                            </div>
+                                                                                        ) : (
+                                                                                            <span className="text-muted small">Imagen de promoción {idx}</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })
+                                                                    )}
+
+                                                                    {settings['ai.products.promotion.post.text'] && (
+                                                                        <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                            <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                                <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                                <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                                    {formatWhatsappText(settings['ai.products.promotion.post.text'])}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </>
+                                                            )}
+
+                                                            {/* Default simple text message bubble fallback */}
+                                                            {['business', 'billing', 'container', 'payment', 'custom'].includes(activeNode) && (
+                                                                <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                    <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                        <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                        <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                            {activeNode === 'business' && formatWhatsappText(`¡Hola! Mi nombre es *${settings['ai.agent.name']}*. Trabajo en *${settings['ai.business.description']}*.`)}
+                                                                            {activeNode === 'billing' && formatWhatsappText(settings['ai.collect.document.text'])}
+                                                                            {activeNode === 'container' && formatWhatsappText(settings['ai.ask.container.text'])}
+                                                                            {activeNode === 'payment' && formatWhatsappText(`Aceptamos los siguientes métodos de pago: *${settings['ai.payment.methods']}*.`)}
+                                                                            {activeNode === 'custom' && formatWhatsappText(`*Directiva del sistema:* ${settings['ai.custom.instructions']}`)}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </Card.Body>
+                                                    <Card.Footer className="bg-white py-3 border-0 border-top d-flex justify-content-end">
+                                                        <Button 
+                                                            variant="success" 
+                                                            size="md" 
+                                                            disabled={saving} 
+                                                            onClick={handleSaveGeneral}
+                                                            style={{ borderRadius: '6px' }}
+                                                        >
+                                                            {saving ? <Spinner size="sm" className="me-2" /> : <Icons.DeviceFloppy size={18} className="me-2" />}
+                                                            Guardar este Bloque
+                                                        </Button>
+                                                    </Card.Footer>
+                                                </Card>
+                                            </Col>
+                                        </Row>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+                        </Row>
+
+                        <div className="d-flex justify-content-end mt-4">
+                            <Button variant="success" type="submit" size="lg" disabled={saving} style={{ borderRadius: '8px' }}>
+                                {saving ? <Spinner size="sm" className="me-2" /> : <Icons.DeviceFloppy size={18} className="me-2" />}
+                                Guardar Configuración de IA y Flujo
+                            </Button>
+                        </div>
+                    </Form>
+                </Tab>
+
+                {/* PESTAÑA 3: CATÁLOGO DE PRODUCTOS IA */}
                 <Tab eventKey="products" title={<span><Icons.Archive size={18} className="me-1" /> Catálogo de Venta</span>}>
                     <Card className="shadow-sm border-0" style={{ borderRadius: '12px' }}>
                         <Card.Header className="bg-light border-0 py-3 d-flex justify-content-between align-items-center">
@@ -731,7 +1516,7 @@ export default function ConfigPage() {
                     </Card>
                 </Tab>
 
-                {/* PESTAÑA 3: COBERTURA DE ENVÍOS */}
+                {/* PESTAÑA 4: COBERTURA DE ENVÍOS */}
                 <Tab eventKey="shipping" title={<span><Icons.MapPin size={18} className="me-1" /> Zonas de Envío</span>}>
                     <Card className="shadow-sm border-0" style={{ borderRadius: '12px' }}>
                         <Card.Header className="bg-light border-0 py-3 d-flex justify-content-between align-items-center">
@@ -801,7 +1586,7 @@ export default function ConfigPage() {
                     </Card>
                 </Tab>
 
-                {/* PESTAÑA 4: BASE DE CONOCIMIENTO (FAQs) */}
+                {/* PESTAÑA 5: BASE DE CONOCIMIENTO (FAQs) */}
                 <Tab eventKey="faq" title={<span><Icons.Book size={18} className="me-1" /> Base de Conocimiento (FAQs)</span>}>
                     <Card className="shadow-sm border-0" style={{ borderRadius: '12px' }}>
                         <Card.Header className="bg-light border-0 py-3 d-flex justify-content-between align-items-center">
@@ -914,7 +1699,6 @@ export default function ConfigPage() {
                                             onChange={(e) => setEditingProduct({ ...editingProduct, intent: e.target.value })}
                                             placeholder="Ej: promocion, catalogo, agua_alcalina"
                                         />
-                                        <Form.Text className="text-muted small">Ayuda al chatbot a identificar si este producto coincide con un intent específico.</Form.Text>
                                     </Form.Group>
                                 </Col>
                                 <Col md={6}>
@@ -926,7 +1710,6 @@ export default function ConfigPage() {
                                             onChange={(e) => setEditingProduct({ ...editingProduct, priority: parseInt(e.target.value) || 100 })}
                                             required
                                         />
-                                        <Form.Text className="text-muted small">Menor valor indica mayor prioridad (ej: 1 se muestra antes que 100).</Form.Text>
                                     </Form.Group>
                                 </Col>
                             </Row>
@@ -939,7 +1722,6 @@ export default function ConfigPage() {
                                     onChange={(e) => setEditingProduct({ ...editingProduct, searchKeywords: e.target.value })}
                                     placeholder="Ej: bidon, recarga, 20 litros, agua alcalina"
                                 />
-                                <Form.Text className="text-muted small">Sinónimos que el cliente podría usar para buscar este producto.</Form.Text>
                             </Form.Group>
 
                             <Form.Group className="mb-3" controlId="prodCustomDesc">
@@ -949,7 +1731,7 @@ export default function ConfigPage() {
                                     rows={3}
                                     value={editingProduct.customAiDescription}
                                     onChange={(e) => setEditingProduct({ ...editingProduct, customAiDescription: e.target.value })}
-                                    placeholder="Escribe detalles específicos que la IA deba conocer al vender este producto (ej. PH exacto, beneficios, promociones incluidas)..."
+                                    placeholder="Escribe detalles específicos que la IA deba conocer al vender este producto..."
                                 />
                             </Form.Group>
 
@@ -966,7 +1748,6 @@ export default function ConfigPage() {
                                             onChange={(e) => setEditingProduct({ ...editingProduct, mediaIdWhatsapp: e.target.value })}
                                             placeholder="Ej: 1234567890123456"
                                         />
-                                        <Form.Text className="text-muted small">ID de la imagen subida a la API de WhatsApp para envío de alta velocidad.</Form.Text>
                                     </Form.Group>
                                 </Col>
                                 <Col md={6}>
@@ -978,7 +1759,6 @@ export default function ConfigPage() {
                                             onChange={(e) => setEditingProduct({ ...editingProduct, imageCaption: e.target.value })}
                                             placeholder="Ej: Bidón de 20L - S/ 15.00"
                                         />
-                                        <Form.Text className="text-muted small">Texto descriptivo que acompaña a la imagen enviada.</Form.Text>
                                     </Form.Group>
                                 </Col>
                             </Row>
@@ -1007,8 +1787,6 @@ export default function ConfigPage() {
                         </div>
                     </Modal.Header>
                     <Modal.Body className="p-3" style={{ background: '#efeae2', backgroundImage: 'radial-gradient(#dfdcd6 10%, transparent 11%)', backgroundSize: '15px 15px', minHeight: '380px' }}>
-                        
-                        {/* WhatsApp Message Bubble Simulation */}
                         <div className="d-flex flex-column gap-3 mb-2">
                             {previewProduct.productImage || previewProduct.mediaIdWhatsapp ? (
                                 <div className="align-self-start bg-white p-1 shadow-sm rounded-3" style={{ maxWidth: '85%', minWidth: '220px', borderRadius: '7px' }}>
@@ -1049,250 +1827,250 @@ export default function ConfigPage() {
                                 </div>
                             )}
                         </div>
-
                     </Modal.Body>
-                    <Modal.Footer className="p-2 bg-light d-flex align-items-center gap-2 border-0">
-                        <InputGroup className="rounded-pill shadow-sm overflow-hidden" style={{ flex: 1, backgroundColor: 'white' }}>
-                            <Form.Control
-                                type="text"
-                                placeholder="Escribe un mensaje..."
-                                disabled
-                                className="border-0 px-3 bg-white"
-                                style={{ fontSize: '0.85rem' }}
-                            />
-                        </InputGroup>
-                        <Button variant="success" className="rounded-circle d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px', backgroundColor: '#00a884', borderColor: '#00a884' }} onClick={() => setShowPreviewModal(false)}>
-                            <Icons.Check size={20} className="text-white" />
-                        </Button>
-                    </Modal.Footer>
                 </Modal>
-            )
-}
+            )}
 
-            {/* MODAL COBERTURA */}
-            <Modal show={showCoverageModal} onHide={() => { setShowCoverageModal(false); setEditingCoverage(null); }} centered>
-                <Modal.Header closeButton>
-                    <Modal.Title className="fw-bold fs-5">{editingCoverage ? 'Editar Zona de Cobertura' : 'Agregar Zona de Cobertura'}</Modal.Title>
-                </Modal.Header>
-                <Form onSubmit={handleSaveCoverage}>
-                    <Modal.Body>
-                        <Form.Group className="mb-3" controlId="covName">
-                            <Form.Label className="small fw-semibold">Nombre del Distrito / Zona</Form.Label>
-                            <Form.Control
-                                type="text"
-                                value={editingCoverage ? editingCoverage.districtName : newCoverage.districtName}
-                                onChange={(e) => {
-                                    if (editingCoverage) setEditingCoverage({ ...editingCoverage, districtName: e.target.value });
-                                    else setNewCoverage({ ...newCoverage, districtName: e.target.value });
-                                }}
-                                placeholder="Ej: La Molina"
-                                required
-                            />
-                        </Form.Group>
-                        <Form.Group className="mb-3" controlId="covFee">
-                            <Form.Label className="small fw-semibold">Costo de Envío (S/)</Form.Label>
-                            <Form.Control
-                                type="number"
-                                step="0.10"
-                                value={editingCoverage ? editingCoverage.deliveryFee : newCoverage.deliveryFee}
-                                onChange={(e) => {
-                                    if (editingCoverage) setEditingCoverage({ ...editingCoverage, deliveryFee: parseFloat(e.target.value) || 0 });
-                                    else setNewCoverage({ ...newCoverage, deliveryFee: parseFloat(e.target.value) || 0 });
-                                }}
-                                required
-                            />
-                        </Form.Group>
-                        <Form.Group className="mb-3" controlId="covMin">
-                            <Form.Label className="small fw-semibold">Monto Mínimo de Pedido (S/)</Form.Label>
-                            <Form.Control
-                                type="number"
-                                step="1.00"
-                                value={editingCoverage ? editingCoverage.minOrderAmount : newCoverage.minOrderAmount}
-                                onChange={(e) => {
-                                    if (editingCoverage) setEditingCoverage({ ...editingCoverage, minOrderAmount: parseFloat(e.target.value) || 0 });
-                                    else setNewCoverage({ ...newCoverage, minOrderAmount: parseFloat(e.target.value) || 0 });
-                                }}
-                                required
-                            />
-                        </Form.Group>
-                        <Form.Group className="mb-3" controlId="covAliases">
-                            <Form.Label className="small fw-semibold">Alias de Distrito (Separados por coma para búsqueda IA)</Form.Label>
-                            <Form.Control
-                                type="text"
-                                value={editingCoverage ? (editingCoverage.aliases || '') : (newCoverage.aliases || '')}
-                                onChange={(e) => {
-                                    if (editingCoverage) setEditingCoverage({ ...editingCoverage, aliases: e.target.value });
-                                    else setNewCoverage({ ...newCoverage, aliases: e.target.value });
-                                }}
-                                placeholder="Ej: molina, la molina, molinero"
-                            />
-                        </Form.Group>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="secondary" onClick={() => { setShowCoverageModal(false); setEditingCoverage(null); }}>Cancelar</Button>
-                        <Button variant="success" type="submit">{editingCoverage ? 'Guardar Cambios' : 'Agregar Zona'}</Button>
-                    </Modal.Footer>
-                </Form>
-            </Modal>
+            {/* MODAL CONFIGURACION COBERTURA */}
+            {showCoverageModal && (
+                <Modal show={showCoverageModal} onHide={() => { setShowCoverageModal(false); setEditingCoverage(null); }} size="md" centered>
+                    <Modal.Header closeButton>
+                        <Modal.Title className="fw-bold fs-5">{editingCoverage ? 'Editar Zona de Cobertura' : 'Agregar Nueva Zona'}</Modal.Title>
+                    </Modal.Header>
+                    <Form onSubmit={handleSaveCoverage}>
+                        <Modal.Body>
+                            <Form.Group className="mb-3" controlId="covDistrict">
+                                <Form.Label className="small fw-semibold">Nombre del Distrito / Zona</Form.Label>
+                                <Form.Control
+                                    type="text"
+                                    value={editingCoverage ? editingCoverage.districtName : newCoverage.districtName}
+                                    onChange={(e) => {
+                                        if (editingCoverage) setEditingCoverage({ ...editingCoverage, districtName: e.target.value });
+                                        else setNewCoverage({ ...newCoverage, districtName: e.target.value });
+                                    }}
+                                    placeholder="Ej. Santiago de Surco"
+                                    required
+                                />
+                            </Form.Group>
 
-            {/* MODAL FAQ */}
-            <Modal show={showFaqModal} onHide={() => { setShowFaqModal(false); setEditingFaq(null); }} size="lg" centered>
-                <Modal.Header closeButton>
-                    <Modal.Title className="fw-bold fs-5">{editingFaq ? 'Editar Pregunta Frecuente (FAQ)' : 'Agregar Pregunta Frecuente (FAQ)'}</Modal.Title>
-                </Modal.Header>
-                <Form onSubmit={handleSaveFaq}>
-                    <Modal.Body>
-                        <Row className="g-3">
-                            <Col md={6}>
-                                <Form.Group className="mb-3" controlId="faqCat">
-                                    <Form.Label className="small fw-semibold">Categoría</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={editingFaq ? editingFaq.category : newFaq.category}
-                                        onChange={(e) => {
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, category: e.target.value });
-                                            else setNewFaq({ ...newFaq, category: e.target.value });
-                                        }}
-                                        placeholder="Ej: Métodos de Pago"
-                                        required
-                                    />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group className="mb-3" controlId="faqKws">
-                                    <Form.Label className="small fw-semibold">Palabras Clave (Separadas por comas)</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={editingFaq ? editingFaq.keywords : newFaq.keywords}
-                                        onChange={(e) => {
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, keywords: e.target.value });
-                                            else setNewFaq({ ...newFaq, keywords: e.target.value });
-                                        }}
-                                        placeholder="Ej: yape, plin, transferencia, pagar, efectivo"
-                                        required
-                                    />
-                                </Form.Group>
-                            </Col>
-                        </Row>
+                            <Form.Group className="mb-3" controlId="covAliases">
+                                <Form.Label className="small fw-semibold">Alias (Separados por coma)</Form.Label>
+                                <Form.Control
+                                    type="text"
+                                    value={editingCoverage ? (editingCoverage.aliases || '') : (newCoverage.aliases || '')}
+                                    onChange={(e) => {
+                                        if (editingCoverage) setEditingCoverage({ ...editingCoverage, aliases: e.target.value });
+                                        else setNewCoverage({ ...newCoverage, aliases: e.target.value });
+                                    }}
+                                    placeholder="Ej. surco, santiago surco, monterrico"
+                                />
+                            </Form.Group>
 
-                        <Form.Group className="mb-3" controlId="faqAns">
-                            <Form.Label className="small fw-semibold">Respuesta de la IA</Form.Label>
-                            <Form.Control
-                                as="textarea"
-                                rows={4}
-                                value={editingFaq ? editingFaq.answer : newFaq.answer}
-                                onChange={(e) => {
-                                    if (editingFaq) setEditingFaq({ ...editingFaq, answer: e.target.value });
-                                    else setNewFaq({ ...newFaq, answer: e.target.value });
-                                }}
-                                placeholder="Escribe la respuesta exacta que debe dar la IA cuando se mencionen las palabras clave..."
-                                required
-                            />
-                        </Form.Group>
+                            <Row className="g-3">
+                                <Col md={6}>
+                                    <Form.Group className="mb-3" controlId="covFee">
+                                        <Form.Label className="small fw-semibold">Costo de Delivery</Form.Label>
+                                        <Form.Control
+                                            type="number"
+                                            value={editingCoverage ? editingCoverage.deliveryFee : newCoverage.deliveryFee}
+                                            onChange={(e) => {
+                                                const val = parseFloat(e.target.value) || 0;
+                                                if (editingCoverage) setEditingCoverage({ ...editingCoverage, deliveryFee: val });
+                                                else setNewCoverage({ ...newCoverage, deliveryFee: val });
+                                            }}
+                                            min="0"
+                                            step="0.1"
+                                            required
+                                        />
+                                    </Form.Group>
+                                </Col>
+                                <Col md={6}>
+                                    <Form.Group className="mb-3" controlId="covMin">
+                                        <Form.Label className="small fw-semibold">Pedido Mínimo</Form.Label>
+                                        <Form.Control
+                                            type="number"
+                                            value={editingCoverage ? editingCoverage.minOrderAmount : newCoverage.minOrderAmount}
+                                            onChange={(e) => {
+                                                const val = parseFloat(e.target.value) || 0;
+                                                if (editingCoverage) setEditingCoverage({ ...editingCoverage, minOrderAmount: val });
+                                                else setNewCoverage({ ...newCoverage, minOrderAmount: val });
+                                            }}
+                                            min="0"
+                                            step="0.1"
+                                            required
+                                        />
+                                    </Form.Group>
+                                </Col>
+                            </Row>
+                        </Modal.Body>
+                        <Modal.Footer>
+                            <Button variant="secondary" onClick={() => { setShowCoverageModal(false); setEditingCoverage(null); }}>Cancelar</Button>
+                            <Button variant="success" type="submit">Guardar Zona</Button>
+                        </Modal.Footer>
+                    </Form>
+                </Modal>
+            )}
 
-                        <Row className="g-3 mb-3">
-                            <Col md={6}>
-                                <Form.Group controlId="faqIntent">
-                                    <Form.Label className="small fw-semibold">Intención (Intent)</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={editingFaq ? (editingFaq.intent || '') : (newFaq.intent || '')}
-                                        onChange={(e) => {
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, intent: e.target.value });
-                                            else setNewFaq({ ...newFaq, intent: e.target.value });
-                                        }}
-                                        placeholder="Ej: promocion, delivery"
-                                    />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group controlId="faqPriority">
-                                    <Form.Label className="small fw-semibold">Prioridad</Form.Label>
-                                    <Form.Control
-                                        type="number"
-                                        value={editingFaq ? (editingFaq.priority || 100) : (newFaq.priority || 100)}
-                                        onChange={(e) => {
-                                            const val = parseInt(e.target.value) || 100;
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, priority: val });
-                                            else setNewFaq({ ...newFaq, priority: val });
-                                        }}
-                                    />
-                                </Form.Group>
-                            </Col>
-                        </Row>
+            {/* MODAL CONFIGURACION FAQ */}
+            {showFaqModal && (
+                <Modal show={showFaqModal} onHide={() => { setShowFaqModal(false); setEditingFaq(null); }} size="lg" centered>
+                    <Modal.Header closeButton>
+                        <Modal.Title className="fw-bold fs-5">{editingFaq ? 'Editar FAQ' : 'Agregar Nueva FAQ'}</Modal.Title>
+                    </Modal.Header>
+                    <Form onSubmit={handleSaveFaq}>
+                        <Modal.Body>
+                            <Row className="g-3 mb-3">
+                                <Col md={6}>
+                                    <Form.Group controlId="faqCategory">
+                                        <Form.Label className="small fw-semibold">Categoría</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            value={editingFaq ? editingFaq.category : newFaq.category}
+                                            onChange={(e) => {
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, category: e.target.value });
+                                                else setNewFaq({ ...newFaq, category: e.target.value });
+                                            }}
+                                            placeholder="Ej. Horarios, Bidones, Envases"
+                                            required
+                                        />
+                                    </Form.Group>
+                                </Col>
+                                <Col md={6}>
+                                    <Form.Group controlId="faqKeywords">
+                                        <Form.Label className="small fw-semibold">Palabras Clave (Disparadores separados por coma)</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            value={editingFaq ? editingFaq.keywords : newFaq.keywords}
+                                            onChange={(e) => {
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, keywords: e.target.value });
+                                                else setNewFaq({ ...newFaq, keywords: e.target.value });
+                                            }}
+                                            placeholder="Ej. horario, atienden, atencion, sabado"
+                                            required
+                                        />
+                                    </Form.Group>
+                                </Col>
+                            </Row>
 
-                        <Row className="g-3 mb-3">
-                            <Col md={6}>
-                                <Form.Group controlId="faqMediaId">
-                                    <Form.Label className="small fw-semibold">Media ID (WhatsApp Cloud API)</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={editingFaq ? (editingFaq.mediaIdWhatsapp || '') : (newFaq.mediaIdWhatsapp || '')}
-                                        onChange={(e) => {
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, mediaIdWhatsapp: e.target.value });
-                                            else setNewFaq({ ...newFaq, mediaIdWhatsapp: e.target.value });
-                                        }}
-                                        placeholder="ID de multimedia en Meta..."
-                                    />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group controlId="faqMediaCaption">
-                                    <Form.Label className="small fw-semibold">Subtítulo del Media (Caption)</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={editingFaq ? (editingFaq.mediaCaption || '') : (newFaq.mediaCaption || '')}
-                                        onChange={(e) => {
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, mediaCaption: e.target.value });
-                                            else setNewFaq({ ...newFaq, mediaCaption: e.target.value });
-                                        }}
-                                        placeholder="Subtítulo que acompañará a la imagen..."
-                                    />
-                                </Form.Group>
-                            </Col>
-                        </Row>
+                            <Form.Group className="mb-3" controlId="faqAnswer">
+                                <Form.Label className="small fw-semibold">Respuesta de la IA</Form.Label>
+                                <Form.Control
+                                    as="textarea"
+                                    rows={4}
+                                    value={editingFaq ? editingFaq.answer : newFaq.answer}
+                                    onChange={(e) => {
+                                        if (editingFaq) setEditingFaq({ ...editingFaq, answer: e.target.value });
+                                        else setNewFaq({ ...newFaq, answer: e.target.value });
+                                    }}
+                                    placeholder="Escribe la respuesta exacta..."
+                                    required
+                                />
+                            </Form.Group>
 
-                        <Row className="g-3">
-                            <Col md={4}>
-                                <Form.Group className="mb-3" controlId="faqAttachType">
-                                    <Form.Label className="small fw-semibold">Tipo de Recurso Adjunto (Legacy)</Form.Label>
-                                    <Form.Select
-                                        value={editingFaq ? editingFaq.attachmentType : newFaq.attachmentType}
-                                        onChange={(e) => {
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, attachmentType: e.target.value });
-                                            else setNewFaq({ ...newFaq, attachmentType: e.target.value });
-                                        }}
-                                    >
-                                        <option value="NONE">Ninguno</option>
-                                        <option value="IMAGE">Imagen</option>
-                                        <option value="PDF">Documento PDF</option>
-                                        <option value="AUDIO">Mensaje de Voz (Audio)</option>
-                                    </Form.Select>
-                                </Form.Group>
-                            </Col>
-                            <Col md={8}>
-                                <Form.Group className="mb-3" controlId="faqAttachUrl">
-                                    <Form.Label className="small fw-semibold">URL del Archivo / Enlace de descarga (Legacy)</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={editingFaq ? (editingFaq.attachmentUrl || '') : (newFaq.attachmentUrl || '')}
-                                        onChange={(e) => {
-                                            if (editingFaq) setEditingFaq({ ...editingFaq, attachmentUrl: e.target.value });
-                                            else setNewFaq({ ...newFaq, attachmentUrl: e.target.value });
-                                        }}
-                                        placeholder="Ej: http://localhost:8080/uploads/catalogo.pdf"
-                                        disabled={editingFaq ? editingFaq.attachmentType === 'NONE' : newFaq.attachmentType === 'NONE'}
-                                    />
-                                </Form.Group>
-                            </Col>
-                        </Row>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="secondary" onClick={() => { setShowFaqModal(false); setEditingFaq(null); }}>Cancelar</Button>
-                        <Button variant="success" type="submit">{editingFaq ? 'Guardar Cambios' : 'Agregar FAQ'}</Button>
-                    </Modal.Footer>
-                </Form>
-            </Modal>
+                            <Row className="g-3 mb-3">
+                                <Col md={6}>
+                                    <Form.Group controlId="faqIntent">
+                                        <Form.Label className="small fw-semibold">Intención (Intent)</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            value={editingFaq ? (editingFaq.intent || '') : (newFaq.intent || '')}
+                                            onChange={(e) => {
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, intent: e.target.value });
+                                                else setNewFaq({ ...newFaq, intent: e.target.value });
+                                            }}
+                                            placeholder="Ej: promocion, delivery"
+                                        />
+                                    </Form.Group>
+                                </Col>
+                                <Col md={6}>
+                                    <Form.Group controlId="faqPriority">
+                                        <Form.Label className="small fw-semibold">Prioridad</Form.Label>
+                                        <Form.Control
+                                            type="number"
+                                            value={editingFaq ? (editingFaq.priority || 100) : (newFaq.priority || 100)}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value) || 100;
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, priority: val });
+                                                else setNewFaq({ ...newFaq, priority: val });
+                                            }}
+                                        />
+                                    </Form.Group>
+                                </Col>
+                            </Row>
+
+                            <Row className="g-3 mb-3">
+                                <Col md={6}>
+                                    <Form.Group controlId="faqMediaId">
+                                        <Form.Label className="small fw-semibold">Media ID (WhatsApp Cloud API)</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            value={editingFaq ? (editingFaq.mediaIdWhatsapp || '') : (newFaq.mediaIdWhatsapp || '')}
+                                            onChange={(e) => {
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, mediaIdWhatsapp: e.target.value });
+                                                else setNewFaq({ ...newFaq, mediaIdWhatsapp: e.target.value });
+                                            }}
+                                            placeholder="ID de multimedia en Meta..."
+                                        />
+                                    </Form.Group>
+                                </Col>
+                                <Col md={6}>
+                                    <Form.Group controlId="faqMediaCaption">
+                                        <Form.Label className="small fw-semibold">Subtítulo del Media (Caption)</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            value={editingFaq ? (editingFaq.mediaCaption || '') : (newFaq.mediaCaption || '')}
+                                            onChange={(e) => {
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, mediaCaption: e.target.value });
+                                                else setNewFaq({ ...newFaq, mediaCaption: e.target.value });
+                                            }}
+                                            placeholder="Subtítulo que acompañará a la imagen..."
+                                        />
+                                    </Form.Group>
+                                </Col>
+                            </Row>
+
+                            <Row className="g-3">
+                                <Col md={4}>
+                                    <Form.Group className="mb-3" controlId="faqAttachType">
+                                        <Form.Label className="small fw-semibold">Tipo de Recurso Adjunto (Legacy)</Form.Label>
+                                        <Form.Select
+                                            value={editingFaq ? editingFaq.attachmentType : newFaq.attachmentType}
+                                            onChange={(e) => {
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, attachmentType: e.target.value });
+                                                else setNewFaq({ ...newFaq, attachmentType: e.target.value });
+                                            }}
+                                        >
+                                            <option value="NONE">Ninguno</option>
+                                            <option value="IMAGE">Imagen</option>
+                                            <option value="PDF">PDF</option>
+                                            <option value="AUDIO">Audio</option>
+                                        </Form.Select>
+                                    </Form.Group>
+                                </Col>
+                                <Col md={8}>
+                                    <Form.Group className="mb-3" controlId="faqAttachUrl">
+                                        <Form.Label className="small fw-semibold">URL del Archivo / Enlace de descarga (Legacy)</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            value={editingFaq ? (editingFaq.attachmentUrl || '') : (newFaq.attachmentUrl || '')}
+                                            onChange={(e) => {
+                                                if (editingFaq) setEditingFaq({ ...editingFaq, attachmentUrl: e.target.value });
+                                                else setNewFaq({ ...newFaq, attachmentUrl: e.target.value });
+                                            }}
+                                            placeholder="Ej: http://localhost:8080/uploads/catalogo.pdf"
+                                            disabled={editingFaq ? editingFaq.attachmentType === 'NONE' : newFaq.attachmentType === 'NONE'}
+                                        />
+                                    </Form.Group>
+                                </Col>
+                            </Row>
+                        </Modal.Body>
+                        <Modal.Footer>
+                            <Button variant="secondary" onClick={() => { setShowFaqModal(false); setEditingFaq(null); }}>Cancelar</Button>
+                            <Button variant="success" type="submit">{editingFaq ? 'Guardar Cambios' : 'Agregar FAQ'}</Button>
+                        </Modal.Footer>
+                    </Form>
+                </Modal>
+            )}
         </Container>
     );
 }

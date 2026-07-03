@@ -366,6 +366,17 @@ public class WhatsAppWebhookController {
                 imageUrl = decision.getImageUrl();
                 caption = firstNonBlank(decision.getCaption(), replyText);
                 needsHuman = decision.isNeedsHuman();
+
+                // SAFEGUARD: If intent is "promocion", automatically force promotion media if configured
+                if ("promocion".equalsIgnoreCase(decision.getIntent())) {
+                    String globalPromoType = settingsService.getSetting("ai.products.promotion.media.type");
+                    String globalPromoMediaIds = settingsService.getSetting("ai.products.promotion.media.ids");
+                    if ("IMAGE".equalsIgnoreCase(globalPromoType) && globalPromoMediaIds != null && !globalPromoMediaIds.trim().isEmpty()) {
+                        sendMedia = true;
+                        mediaType = "image";
+                        mediaId = globalPromoMediaIds.trim();
+                    }
+                }
             } else {
                 // Fallback defensivo: si Gemini no devolvió JSON, se envía como texto normal.
                 replyText = stripLegacyImageTags(aiResponse).trim();
@@ -375,6 +386,18 @@ public class WhatsAppWebhookController {
                 imageUrl = null;
                 caption = null;
                 needsHuman = false;
+
+                // Even on raw fallback, check if we want to force promotion media
+                if (containsAny(normalize(aiResponse), "promo", "promocion", "oferta", "descuento")) {
+                    String globalPromoType = settingsService.getSetting("ai.products.promotion.media.type");
+                    String globalPromoMediaIds = settingsService.getSetting("ai.products.promotion.media.ids");
+                    if ("IMAGE".equalsIgnoreCase(globalPromoType) && globalPromoMediaIds != null && !globalPromoMediaIds.trim().isEmpty()) {
+                        sendMedia = true;
+                        mediaType = "image";
+                        mediaId = globalPromoMediaIds.trim();
+                        caption = replyText;
+                    }
+                }
             }
 
             String wamid = null;
@@ -456,6 +479,24 @@ public class WhatsAppWebhookController {
 
                 if (!mediaSent) {
                     logger.warn("Gemini solicitó envío de media, pero no se pudo enviar ningún media_id ni image_url válido.");
+                } else {
+                    // Send post-text if intent is promocion and post-text is configured
+                    boolean isPromo = false;
+                    if (decision != null && "promocion".equalsIgnoreCase(decision.getIntent())) {
+                        isPromo = true;
+                    } else if (decision == null && containsAny(normalize(aiResponse), "promo", "promocion", "oferta", "descuento")) {
+                        isPromo = true;
+                    }
+                    if (isPromo) {
+                        String postText = settingsService.getSetting("ai.products.promotion.post.text");
+                        if (postText != null && !postText.trim().isEmpty()) {
+                            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                            String postWamid = apiService.sendMessage(clientPhone, postText.trim());
+                            if (postWamid != null) {
+                                wamid = postWamid;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -604,6 +645,14 @@ public class WhatsAppWebhookController {
         String normalized = Normalizer.normalize(text, Normalizer.Form.NFD);
         normalized = normalized.replaceAll("\\p{M}", "");
         return normalized.toLowerCase().trim();
+    }
+
+    private boolean containsAny(String text, String... terms) {
+        if (text == null) return false;
+        for (String term : terms) {
+            if (text.contains(normalize(term))) return true;
+        }
+        return false;
     }
 
     private void sendSystemAlert(String clientPhone, String text, String ourNumber) {

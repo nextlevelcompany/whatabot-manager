@@ -5010,10 +5010,7 @@ Project:	Jampack
 
 	.contactapp-sidebar {
 		position: absolute;
-		display: -webkit-box;
-		display: -ms-flexbox;
-		display: flex;
-		flex-flow: column;
+		display: none;
 		left: 0;
 		width: 270px;
 		margin-left: 0;
@@ -5100,9 +5097,10 @@ Project:	Jampack
 	display: -ms-flexbox;
 	display: flex;
 	overflow: hidden;
-	padding-left: 270px;
+	padding-left: 0;
 	position: relative;
 	height: 100%;
+	width: 100%;
 	left: 0;
 	@include transition(all 0.2s ease);
 
