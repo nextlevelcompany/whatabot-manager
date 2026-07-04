@@ -20,6 +20,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.jdbc.core.JdbcTemplate;
+
 import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -40,6 +42,7 @@ public class WhatsAppWebhookController {
     private final WhatsAppApiService apiService;
     private final GeminiService geminiService;
     private final AiConfigDao aiConfigDao;
+    private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -49,7 +52,8 @@ public class WhatsAppWebhookController {
                                      GeminiService geminiService,
                                      SettingsService settingsService,
                                      ContactDao contactDao,
-                                     AiConfigDao aiConfigDao) {
+                                     AiConfigDao aiConfigDao,
+                                     JdbcTemplate jdbcTemplate) {
         this.messageDao = messageDao;
         this.messagingTemplate = messagingTemplate;
         this.apiService = apiService;
@@ -57,6 +61,7 @@ public class WhatsAppWebhookController {
         this.settingsService = settingsService;
         this.contactDao = contactDao;
         this.aiConfigDao = aiConfigDao;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     private String getVerifyToken() {
@@ -134,8 +139,8 @@ public class WhatsAppWebhookController {
             for (JsonNode messageNode : messagesNode) {
                 String type = messageNode.has("type") ? messageNode.get("type").asText() : "";
                 
-                // Procesar mensajes de tipo texto, imagen, audio o video
-                if ("text".equals(type) || "image".equals(type) || "audio".equals(type) || "video".equals(type)) {
+                // Procesar mensajes de tipo texto, imagen, audio, video o ubicación
+                if ("text".equals(type) || "image".equals(type) || "audio".equals(type) || "video".equals(type) || "location".equals(type)) {
                     String fromPhone = messageNode.has("from") ? messageNode.get("from").asText() : null;
                     long unixTime = messageNode.has("timestamp") ? messageNode.get("timestamp").asLong() : Instant.now().getEpochSecond();
                     String messageId = messageNode.has("id") ? messageNode.get("id").asText() : null;
@@ -148,6 +153,23 @@ public class WhatsAppWebhookController {
 
                     if ("text".equals(type)) {
                         textBody = messageNode.path("text").path("body").asText();
+                    } else if ("location".equals(type)) {
+                        JsonNode locNode = messageNode.get("location");
+                        if (locNode != null) {
+                            double lat = locNode.path("latitude").asDouble();
+                            double lng = locNode.path("longitude").asDouble();
+                            String name = locNode.path("name").asText("");
+                            String address = locNode.path("address").asText("");
+                            textBody = "[UBICACIÓN] Latitud: " + lat + ", Longitud: " + lng;
+                            if (!name.isEmpty()) {
+                                textBody += " | Nombre: " + name;
+                            }
+                            if (!address.isEmpty()) {
+                                textBody += " | Dirección: " + address;
+                            }
+                        } else {
+                            textBody = "[UBICACIÓN sin coordenadas]";
+                        }
                     } else {
                         // type es "image", "audio" o "video"
                         JsonNode mediaNode = messageNode.get(type);
@@ -192,8 +214,8 @@ public class WhatsAppWebhookController {
                         messagingTemplate.convertAndSend(destination, message);
                         logger.info("Mensaje transmitido en tiempo real vía WebSocket a {}", destination);
 
-                        // Responder asíncronamente con Gemini para textos y audios. Imágenes/video solo se guardan y muestran en el CRM.
-                        if ("text".equals(type) || "audio".equals(type)) {
+                        // Responder asíncronamente con Gemini para textos, audios y ubicaciones. Imágenes/video solo se guardan y muestran en el CRM.
+                        if ("text".equals(type) || "audio".equals(type) || "location".equals(type)) {
                             // Obtener el contacto para verificar su configuración individual
                             Optional<Contact> contactOpt = contactDao.findByPhone(fromPhone);
                             if (contactOpt.isEmpty()) {
@@ -230,6 +252,45 @@ public class WhatsAppWebhookController {
                                     logger.info("Creado nuevo contacto automáticamente en base de datos: {} ({})", profileName, fromPhone);
                                 } catch (Exception e) {
                                     logger.error("Error al crear automáticamente el contacto para el teléfono {}: ", fromPhone, e);
+                                }
+                            }
+
+                            // Guardar la dirección y ubicación de WhatsApp si el mensaje es de tipo location
+                            if ("location".equals(type) && contactOpt.isPresent()) {
+                                try {
+                                    JsonNode locNode = messageNode.get("location");
+                                    if (locNode != null) {
+                                        double lat = locNode.path("latitude").asDouble();
+                                        double lng = locNode.path("longitude").asDouble();
+                                        String addressText = locNode.path("address").asText("");
+                                        if (addressText.isEmpty()) {
+                                            addressText = locNode.path("name").asText("Ubicación WhatsApp");
+                                        }
+                                        
+                                        Long contactId = contactOpt.get().getId();
+                                        // Verificar si ya existe una dirección "WhatsApp GPS" para este contacto
+                                        Integer count = jdbcTemplate.queryForObject(
+                                            "SELECT COUNT(*) FROM direcciones WHERE id_contacto = ? AND nombre_ubicacion = 'WhatsApp GPS'",
+                                            Integer.class, contactId
+                                        );
+                                        if (count != null && count > 0) {
+                                            jdbcTemplate.update(
+                                                "UPDATE direcciones SET direccion_completa = ?, latitud = ?, longitud = ? " +
+                                                "WHERE id_contacto = ? AND nombre_ubicacion = 'WhatsApp GPS'",
+                                                addressText, lat, lng, contactId
+                                            );
+                                            logger.info("Actualizada dirección GPS de WhatsApp para el contacto ID: {}", contactId);
+                                        } else {
+                                            jdbcTemplate.update(
+                                                "INSERT INTO direcciones (id_contacto, nombre_ubicacion, direccion_completa, latitud, longitud) " +
+                                                "VALUES (?, ?, ?, ?, ?)",
+                                                contactId, "WhatsApp GPS", addressText, lat, lng
+                                            );
+                                            logger.info("Insertada nueva dirección GPS de WhatsApp para el contacto ID: {}", contactId);
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    logger.error("Error al guardar la ubicación de WhatsApp para el contacto: ", e);
                                 }
                             }
 

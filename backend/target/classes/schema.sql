@@ -234,3 +234,123 @@ INSERT INTO ai_knowledge_base (category, keywords, answer, attachment_url, attac
 SELECT 'Beneficios del Agua', 'alcalina,beneficios,ph,por que,salud,buena,ozonizada', 'Nuestra Agua Alcalina pH 8.2 está ionizada y ozonizada mediante 12 procesos de purificación. Ayuda a neutralizar la acidez en el cuerpo, mejora la hidratación celular y aporta minerales esenciales para tu bienestar diario. 💧✨', NULL, 'NONE'
 WHERE NOT EXISTS (SELECT 1 FROM ai_knowledge_base WHERE category = 'Beneficios del Agua');
 
+
+-- ============================================================
+-- MÓDULO DE LOGÍSTICA Y PEDIDOS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS conductores (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    apellido VARCHAR(100),
+    vehiculo_placa VARCHAR(20),
+    activo BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS zonas (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    activo BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS etapas_pedido (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    orden INT DEFAULT 0,
+    es_entregado INT DEFAULT 0,
+    label_ganado VARCHAR(100),
+    es_perdido INT DEFAULT 0,
+    label_perdido VARCHAR(100)
+);
+
+CREATE TABLE IF NOT EXISTS pedidos (
+    id BIGSERIAL PRIMARY KEY,
+    numero_pedido VARCHAR(50) UNIQUE,
+    contacto_id BIGINT REFERENCES contacts(id) ON DELETE SET NULL,
+    contacto_persona_nombre VARCHAR(200),
+    metodo_pago VARCHAR(50),
+    estado_pago VARCHAR(50) DEFAULT 'Pendiente',
+    subtotal NUMERIC(10, 2) DEFAULT 0.00,
+    igv NUMERIC(10, 2) DEFAULT 0.00,
+    total NUMERIC(10, 2) DEFAULT 0.00,
+    direccion_entrega VARCHAR(250),
+    distrito VARCHAR(100),
+    latitud DOUBLE PRECISION,
+    longitud DOUBLE PRECISION,
+    notas TEXT,
+    fecha_entrega DATE,
+    hora_entrega VARCHAR(50),
+    chofer_id INT REFERENCES conductores(id) ON DELETE SET NULL,
+    prioridad VARCHAR(20) DEFAULT 'Media',
+    zona INT REFERENCES zonas(id) ON DELETE SET NULL,
+    tipo_envio VARCHAR(50) DEFAULT 'Despacho',
+    etapa_id INT REFERENCES etapas_pedido(id) ON DELETE SET NULL,
+    es_reprogramado INT DEFAULT 0,
+    quien_recibio VARCHAR(200),
+    envases_entregados INT DEFAULT 0,
+    envases_devueltos INT DEFAULT 0,
+    cant_vendidos INT DEFAULT 0,
+    monto_final NUMERIC(10, 2) DEFAULT 0.00,
+    metodo_pago_real VARCHAR(50),
+    saldo_actual_cliente INT DEFAULT 0,
+    venta_id INT,
+    venta_estado VARCHAR(50),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS pedido_detalles (
+    id BIGSERIAL PRIMARY KEY,
+    pedido_id BIGINT NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+    producto_id INT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+    cantidad INT NOT NULL DEFAULT 1,
+    precio_unitario NUMERIC(10, 2) NOT NULL DEFAULT 0.00
+);
+
+-- Seed Conductores
+INSERT INTO conductores (nombre, apellido, vehiculo_placa, activo)
+SELECT 'Juan', 'Pérez', 'F4D-882', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM conductores WHERE nombre = 'Juan' AND apellido = 'Pérez');
+
+INSERT INTO conductores (nombre, apellido, vehiculo_placa, activo)
+SELECT 'Carlos', 'Sánchez', 'A9K-123', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM conductores WHERE nombre = 'Carlos' AND apellido = 'Sánchez');
+
+-- Seed Zonas
+INSERT INTO zonas (nombre, activo)
+SELECT 'Zona Este', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM zonas WHERE nombre = 'Zona Este');
+
+INSERT INTO zonas (nombre, activo)
+SELECT 'Zona Centro', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM zonas WHERE nombre = 'Zona Centro');
+
+INSERT INTO zonas (nombre, activo)
+SELECT 'Zona Norte', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM zonas WHERE nombre = 'Zona Norte');
+
+INSERT INTO zonas (nombre, activo)
+SELECT 'Zona Sur', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM zonas WHERE nombre = 'Zona Sur');
+
+-- Seed Etapas de Pedido
+INSERT INTO etapas_pedido (nombre, orden, es_entregado, label_ganado, es_perdido, label_perdido)
+SELECT 'Pendiente', 1, 0, NULL, 0, NULL
+WHERE NOT EXISTS (SELECT 1 FROM etapas_pedido WHERE nombre = 'Pendiente');
+
+INSERT INTO etapas_pedido (nombre, orden, es_entregado, label_ganado, es_perdido, label_perdido)
+SELECT 'En Ruta', 2, 0, NULL, 0, NULL
+WHERE NOT EXISTS (SELECT 1 FROM etapas_pedido WHERE nombre = 'En Ruta');
+
+INSERT INTO etapas_pedido (nombre, orden, es_entregado, label_ganado, es_perdido, label_perdido)
+SELECT 'Entregado', 3, 1, 'ENTREGADO', 0, NULL
+WHERE NOT EXISTS (SELECT 1 FROM etapas_pedido WHERE nombre = 'Entregado');
+
+INSERT INTO etapas_pedido (nombre, orden, es_entregado, label_ganado, es_perdido, label_perdido)
+SELECT 'Reprogramado', 4, 0, NULL, 0, NULL
+WHERE NOT EXISTS (SELECT 1 FROM etapas_pedido WHERE nombre = 'Reprogramado');
+
+INSERT INTO etapas_pedido (nombre, orden, es_entregado, label_ganado, es_perdido, label_perdido)
+SELECT 'Cancelado', 5, 0, NULL, 1, 'CANCELADO'
+WHERE NOT EXISTS (SELECT 1 FROM etapas_pedido WHERE nombre = 'Cancelado');
+
+

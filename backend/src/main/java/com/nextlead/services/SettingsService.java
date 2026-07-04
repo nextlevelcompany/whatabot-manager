@@ -4,6 +4,8 @@ import com.nextlead.dao.SystemSettingsDao;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import jakarta.annotation.PostConstruct;
+import java.util.TimeZone;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -40,12 +42,36 @@ public class SettingsService {
         this.settingsDao = settingsDao;
     }
 
+    @PostConstruct
+    public void initTimeZone() {
+        try {
+            String tz = getSetting("timezone");
+            if (tz != null && !tz.trim().isEmpty()) {
+                TimeZone.setDefault(TimeZone.getTimeZone(tz));
+                System.out.println("Default JVM TimeZone set to: " + tz);
+            } else {
+                TimeZone.setDefault(TimeZone.getTimeZone("America/Lima"));
+                System.out.println("Default JVM TimeZone set to fallback: America/Lima");
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to set default JVM TimeZone: " + e.getMessage());
+        }
+    }
+
     public String getSetting(String key) {
         return settingsDao.getSetting(key).orElseGet(() -> getFallback(key));
     }
 
     public void saveSetting(String key, String value) {
         settingsDao.saveSetting(key, value);
+        if ("timezone".equals(key) && value != null && !value.trim().isEmpty()) {
+            try {
+                TimeZone.setDefault(TimeZone.getTimeZone(value));
+                System.out.println("Default JVM TimeZone dynamically changed to: " + value);
+            } catch (Exception e) {
+                System.err.println("Failed to update default JVM TimeZone dynamically: " + e.getMessage());
+            }
+        }
     }
 
     public Map<String, String> getAllSettings() {
@@ -84,8 +110,17 @@ public class SettingsService {
         settings.put("ai.greeting.registered.media.type", getSetting("ai.greeting.registered.media.type"));
         settings.put("ai.greeting.registered.media.ids", getSetting("ai.greeting.registered.media.ids"));
         settings.put("ai.payment.methods", getSetting("ai.payment.methods"));
+        settings.put("ai.order.collect", getSetting("ai.order.collect"));
+        settings.put("ai.order.collect.text", getSetting("ai.order.collect.text"));
         settings.put("ai.custom.instructions", getSetting("ai.custom.instructions"));
         settings.put("ai.flow.order", getSetting("ai.flow.order"));
+        settings.put("empresa.nombre", getSetting("empresa.nombre"));
+        settings.put("empresa.ruc", getSetting("empresa.ruc"));
+        settings.put("empresa.telefono", getSetting("empresa.telefono"));
+        settings.put("timezone", getSetting("timezone"));
+        settings.put("formato.fecha", getSetting("formato.fecha"));
+        settings.put("formato.hora", getSetting("formato.hora"));
+        settings.put("igv.porcentaje", getSetting("igv.porcentaje"));
         return settings;
     }
 
@@ -117,6 +152,10 @@ public class SettingsService {
                 return "30";
             case "ai.business.type":
                 return "ECOMMERCE";
+            case "ai.order.collect":
+                return "true";
+            case "ai.order.collect.text":
+                return "REGLA: Cada vez que el cliente elija o pida un producto (ya sea desde el flujo inicial, la promo, upselling, o una solicitud directa), CONFIRMA lo agregado y pregunta si desea algo más.\n\nFormato del mensaje de confirmación:\n\n\"✅ *¡Agregado!*\n\n🛒 *[Cantidad]x [Nombre del Producto]*\n💲 Precio unitario: *S/ [Precio_Unitario]*\n💰 Subtotal: *S/ [Subtotal]*\n\n[Si el carrito tiene más de 1 ítem, mostrar resumen parcial:]\n📦 *Tu carrito actual:*\n▫️ [Cantidad]x [Producto 1] (S/ [Precio_Unitario] c/u) — S/ [Subtotal1]\n▫️ [Cantidad]x [Producto 2] (S/ [Precio_Unitario] c/u) — S/ [Subtotal2]\n[...]\n💰 *Subtotal parcial: S/ [suma]*\n\n¿Deseas agregar *otro producto* o *confirmamos tu pedido*? 🤔\"\n\nComportamiento según respuesta:\n- QUIERE AGREGAR MÁS → Consulta Productos para mostrarle las opciones disponibles (los que NO tiene ya en el carrito o variantes diferentes). Cuando elija, agrega al CARRITO y vuelve a mostrar CONFIRMACIÓN DE AGREGADO.\n- CONFIRMA / ESTÁ CONFORME → Continuar al siguiente paso pendiente del FLUJO DEL PEDIDO (COBERTURA, FORMULARIO, etc.).\n\nExcepciones donde NO se pregunta \"¿algo más?\":\n- Ninguna. SIEMPRE se confirma el agregado y se pregunta.";
             case "ai.ask.container":
                 return "true";
             case "ai.ask.container.text":
@@ -124,7 +163,7 @@ public class SettingsService {
             case "ai.collect.location":
                 return "true";
             case "ai.collect.location.text":
-                return "Por favor, compárteme tu ubicación actual por el GPS nativo de WhatsApp 📍 para coordinar tu envío gratis a domicilio.";
+                return "Cuando el cliente registrado ya tiene productos confirmados en el carrito y va a pasar a la etapa de datos de entrega, llama a \"consultar_direccion_cliente\".\n\nSi devuelve dirección y ubicación guardadas:\n\nMensaje:\n\"📍 *[Nombre]*, tenemos registrada esta dirección de entrega:\n\n✅ *Dirección:* [Dirección guardada]\n✅ *Distrito:* [Distrito guardado]\n✅ *Ubicación:* [URL Google Maps guardada]\n\n¿Enviamos a esta *misma dirección* o prefieres indicar una *dirección diferente*? 🏠\"\n\nComportamiento según respuesta:\n- MISMA DIRECCIÓN → Usar los datos guardados (dirección, distrito, ubicación). Saltar VERIFICACIÓN DE COBERTURA (ya fue validada antes) y FORMULARIO DE ENTREGA (solo pedir datos faltantes como Nombres/Apellidos si no están y Tipo de Comprobante). Ir directo a VALIDACIÓN DE COMPROBANTE.\n- DIRECCIÓN DIFERENTE → Ir a VERIFICACIÓN DE COBERTURA (sacar de Zonas de Envío) y FORMULARIO DE ENTREGA normal (pedir todos los datos desde cero).\n\nSi es CLIENTE NUEVO o el CLIENTE REGISTRADO NO tiene dirección guardada:\n- VERIFICACIÓN DE COBERTURA → Solicita su ubicación GPS nativa de WhatsApp. Cruza el distrito/coordenadas con la lista de \"Zonas de Envío\" para validar si el delivery está cubierto y calcular el costo de envío.\n- FORMULARIO DE ENTREGA → Solicita todos los datos desde cero: Nombres/Apellidos, Dirección exacta, Referencia de domicilio, Distrito y Tipo de Comprobante.\n- VALIDACIÓN DE COMPROBANTE → Pasa al siguiente paso.";
             case "ai.products.promotion":
                 return "true";
             case "ai.products.promotion.text":
@@ -154,11 +193,25 @@ public class SettingsService {
             case "ai.greeting.registered.media.ids":
                 return "";
             case "ai.payment.methods":
-                return "Yape, Plin, Efectivo contra entrega, Transferencias bancarias";
+                return "💳 MEDIOS DE PAGO - ANTARQUI\n\nPara tu comodidad, aceptamos las siguientes opciones:\n\n🏦 Transferencia Bancaria (Empresa)\nRazón Social: ASCENDO PERÚ E.I.R.L\nRUC: 20611846721\nBanco: Interbank\nCuenta Soles: 200-3005845511\nCCI: 003-200-003005845511-31\n\n📱 Billeteras Digitales (Yape/Plin)\nNombre: Anabel Laime\nNúmero: 948 613 380\n\n💵 Otras opciones:\nEfectivo: Monto exacto contraentrega.\nTarjeta de Crédito/Débito: Aceptamos todas las tarjetas.\nPago por QR: Escanea el código que te proporcionaremos desde tu móvil.\n\n¡Gracias por elegir Antarqui! Si tienes alguna duda, escríbenos.";
             case "ai.custom.instructions":
                 return "Ofrecer la promoción especial de 3 recargas si muestran interés en compras familiares o de consumo recurrente.";
             case "ai.flow.order":
-                return "business,welcome,registered,location,promotion,billing,container,payment,custom";
+                return "business,welcome,registered,order,location,promotion,billing,container,payment,custom";
+            case "empresa.nombre":
+                return "NextLead CRM";
+            case "empresa.ruc":
+                return "20611846721";
+            case "empresa.telefono":
+                return "948613380";
+            case "timezone":
+                return "America/Lima";
+            case "formato.fecha":
+                return "d/m/Y";
+            case "formato.hora":
+                return "24h";
+            case "igv.porcentaje":
+                return "18";
             default:
                 return null;
         }

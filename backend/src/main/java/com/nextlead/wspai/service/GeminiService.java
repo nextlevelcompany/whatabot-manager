@@ -146,7 +146,7 @@ public class GeminiService {
                     .append("3. Responde breve, natural y comercial en español peruano.\n")
                     .append("4. Para enviar una imagen, coloca send_media=true solo si el contexto trae media_id_whatsapp o image_url.\n")
                     .append("5. Si hay media_id_whatsapp, úsalo como media_id. Si no hay media_id_whatsapp pero sí image_url, usa image_url.\n")
-                    .append("6. Si el cliente quiere comprar, solicita solo los datos faltantes: nombre, distrito, dirección, referencia, producto, cantidad y forma de pago.\n")
+                    .append("6. Si el cliente quiere comprar, solicita solo los datos faltantes: nombre, distrito, dirección, referencia, producto, cantidad y forma de pago. Si el cliente corrige o actualiza la cantidad de un producto solicitado anteriormente (por ejemplo, 'mejor 4' o 'cambia a 3'), actualiza el carrito modificando la cantidad de dicho producto y muestra el total actualizado.\n")
                     .append("7. Si el cliente pide asesor, reclama o indica que no entiende, marca needs_human=true.\n")
                     .append("8. No repitas todo el catálogo si el cliente no lo pidió.\n")
                     .append("9. No uses etiquetas [IMG]. El backend enviará la imagen según el JSON.\n")
@@ -619,6 +619,13 @@ public class GeminiService {
         }
 
         sb.append("\n=== PARÁMETROS OBLIGATORIOS DURANTE EL PROCESO ===\n");
+        if ("true".equalsIgnoreCase(settingsService.getSetting("ai.order.collect"))) {
+            String ruleText = settingsService.getSetting("ai.order.collect.text");
+            if (ruleText == null || ruleText.trim().isEmpty()) {
+                ruleText = "Debes solicitar detalladamente al cliente qué productos, combos o recargas desea pedir de nuestro catálogo.";
+            }
+            sb.append("- SOLICITUD DE PEDIDO: ").append(ruleText.trim()).append("\n");
+        }
         if ("true".equalsIgnoreCase(settingsService.getSetting("ai.collect.location"))) {
             String ruleText = settingsService.getSetting("ai.collect.location.text");
             if (ruleText == null || ruleText.trim().isEmpty()) {

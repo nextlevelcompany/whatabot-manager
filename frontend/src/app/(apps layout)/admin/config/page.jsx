@@ -14,6 +14,35 @@ const getApiBase = () => {
 
 const API_BASE = getApiBase();
 
+const extractScenario1Message = (text) => {
+    if (!text) return "";
+    const match = text.match(/(?:envia el siguiente mensaje:|Mensaje:)\s*\n*["“]([^"”]+)["”]/i) || text.match(/(📍[^]+?🏠)/i);
+    if (match && match[1]) {
+        return match[1].trim();
+    }
+    return `📍 *Juan Carlos*, tenemos registrada esta dirección de entrega:\n\n✅ *Dirección:* Av. Larco 123\n✅ *Distrito:* Miraflores\n✅ *Ubicación:* https://maps.google.com/?q=-12.122,-77.028\n\n¿Enviamos a esta *misma dirección* o prefieres indicar una *dirección diferente*? 🏠`;
+};
+
+const extractScenario2DistrictMessage = (text) => {
+    if (!text) return "";
+    const match = text.match(/Pregunta al cliente\s+([^.\n]+)/i);
+    if (match && match[1]) {
+        // Capitalize first letter
+        const raw = match[1].trim();
+        return raw.charAt(0).toUpperCase() + raw.slice(1) + ". 📍";
+    }
+    return "Por favor, indícame en qué distrito te encuentras para verificar la cobertura de entrega. 📍";
+};
+
+const extractScenario2FormMessage = (text) => {
+    if (!text) return "";
+    const match = text.match(/enviando exactamente este mensaje:\s*\n*["“]([^"”]+)["”]/i) || text.match(/(¡Genial![^]+?\?)/i);
+    if (match && match[1]) {
+        return match[1].trim();
+    }
+    return `¡Genial! 💧 Tenemos cobertura en Miraflores.\n\nPor favor, envíanos los siguientes datos para programar tu entrega:\n\n📝 DATOS DE ENTREGA:\n✅ Nombres y Apellidos:\n✅ Dirección completa:\n✅ Ubicación: Por favor comparte tu ubicación desde WhatsApp (botón 📎 → Ubicación)\n✅ Tipo de Comprobante: ¿Boleta simple, Boleta con DNI o Factura?`;
+};
+
 export default function ConfigPage() {
     const [activeTab, setActiveTab] = useState('ai_config');
     const [activeNode, setActiveNode] = useState('welcome');
@@ -36,7 +65,27 @@ export default function ConfigPage() {
         'ai.ask.container': 'true',
         'ai.ask.container.text': 'Veo que llevas una recarga de agua de 20L. 💧 ¿Cuentas con envase retornable vacío en casa para entregar al repartidor? Si no tienes, podemos cotizarte la venta de un envase nuevo.',
         'ai.collect.location': 'true',
-        'ai.collect.location.text': 'Por favor, compárteme tu ubicación actual por el GPS nativo de WhatsApp 📍 para coordinar tu envío gratis a domicilio.',
+        'ai.collect.location.text': `Cuando el cliente registrado ya tiene productos confirmados en el carrito y va a pasar a la etapa de datos de entrega, llama a "consultar_direccion_cliente".
+
+Si devuelve dirección y ubicación guardadas:
+
+Mensaje:
+"📍 *[Nombre]*, tenemos registrada esta dirección de entrega:
+
+✅ *Dirección:* [Dirección guardada]
+✅ *Distrito:* [Distrito guardado]
+✅ *Ubicación:* [URL Google Maps guardada]
+
+¿Enviamos a esta *misma dirección* o prefieres indicar una *dirección diferente*? 🏠"
+
+Comportamiento según respuesta:
+- MISMA DIRECCIÓN → Usar los datos guardados (dirección, distrito, ubicación). Saltar VERIFICACIÓN DE COBERTURA (ya fue validada antes) y FORMULARIO DE ENTREGA (solo pedir datos faltantes como Nombres/Apellidos si no están y Tipo de Comprobante). Ir directo a VALIDACIÓN DE COMPROBANTE.
+- DIRECCIÓN DIFERENTE → Ir a VERIFICACIÓN DE COBERTURA (sacar de Zonas de Envío) y FORMULARIO DE ENTREGA normal (pedir todos los datos desde cero).
+
+Si es CLIENTE NUEVO o el CLIENTE REGISTRADO NO tiene dirección guardada:
+- VERIFICACIÓN DE COBERTURA → Solicita su ubicación GPS nativa de WhatsApp. Cruza el distrito/coordenadas con la lista de "Zonas de Envío" para validar si el delivery está cubierto y calcular el costo de envío.
+- FORMULARIO DE ENTREGA → Solicita todos los datos desde cero: Nombres/Apellidos, Dirección exacta, Referencia de domicilio, Distrito y Tipo de Comprobante.
+- VALIDACIÓN DE COMPROBANTE → Pasa al siguiente paso.`,
         'ai.products.promotion': 'true',
         'ai.products.promotion.text': '🎁 ¡Tenemos excelentes noticias! Contamos con nuestra *Promoción Especial del Mes*: 3 Recargas de Agua Alcalina de 20L por solo *S/ 39.00* (¡ahorras S/ 15.00!). Además, te podemos brindar información de nuestros bidones nuevos de policarbonato. ¿Te gustaría llevar la promoción o prefieres ver otros productos? 💧',
         'ai.products.promotion.media.ids': '',
@@ -51,15 +100,62 @@ export default function ConfigPage() {
         'ai.greeting.registered': '¡Hola *[Nombre]*, bienvenido de nuevo a *Antarqui Perú*! 💧 ¿Te gustaría pedir tu recarga de siempre o prefieres conocer nuestras promociones del día?',
         'ai.greeting.registered.media.type': 'NONE',
         'ai.greeting.registered.media.ids': '',
-        'ai.payment.methods': 'Yape, Plin, Efectivo contra entrega, Transferencias bancarias',
+        'ai.payment.methods': `💳 MEDIOS DE PAGO - ANTARQUI
+
+Para tu comodidad, aceptamos las siguientes opciones:
+
+🏦 Transferencia Bancaria (Empresa)
+Razón Social: ASCENDO PERÚ E.I.R.L
+RUC: 20611846721
+Banco: Interbank
+Cuenta Soles: 200-3005845511
+CCI: 003-200-003005845511-31
+
+📱 Billeteras Digitales (Yape/Plin)
+Nombre: Anabel Laime
+Número: 948 613 380
+
+💵 Otras opciones:
+Efectivo: Monto exacto contraentrega.
+Tarjeta de Crédito/Débito: Aceptamos todas las tarjetas.
+Pago por QR: Escanea el código que te proporcionaremos desde tu móvil.
+
+¡Gracias por elegir Antarqui! Si tienes alguna duda, escríbenos.`,
+        'ai.order.collect': 'true',
+        'ai.order.collect.text': `REGLA: Cada vez que el cliente elija o pida un producto (ya sea desde el flujo inicial, la promo, upselling, o una solicitud directa), CONFIRMA lo agregado y pregunta si desea algo más.
+
+Formato del mensaje de confirmación:
+
+"✅ *¡Agregado!*
+
+🛒 *[Cantidad]x [Nombre del Producto]*
+💲 Precio unitario: *S/ [Precio_Unitario]*
+💰 Subtotal: *S/ [Subtotal]*
+
+[Si el carrito tiene más de 1 ítem, mostrar resumen parcial:]
+📦 *Tu carrito actual:*
+▫️ [Cantidad]x [Producto 1] (S/ [Precio_Unitario] c/u) — S/ [Subtotal1]
+▫️ [Cantidad]x [Producto 2] (S/ [Precio_Unitario] c/u) — S/ [Subtotal2]
+[...]
+💰 *Subtotal parcial: S/ [suma]*
+
+¿Deseas agregar *otro producto* o *confirmamos tu pedido*? 🤔"
+
+Comportamiento según respuesta:
+- QUIERE AGREGAR MÁS → Consulta Productos para mostrarle las opciones disponibles (los que NO tiene ya en el carrito o variantes diferentes). Cuando elija, agrega al CARRITO y vuelve a mostrar CONFIRMACIÓN DE AGREGADO.
+- CONFIRMA / ESTÁ CONFORME → Continuar al siguiente paso pendiente del FLUJO DEL PEDIDO (COBERTURA, FORMULARIO, etc.).
+
+Excepciones donde NO se pregunta "¿algo más?":
+- Ninguna. SIEMPRE se confirma el agregado y se pregunta.`,
         'ai.custom.instructions': 'Ofrecer la promoción especial de 3 recargas si muestran interés en compras familiares o de consumo recurrente.',
-        'ai.flow.order': 'business,welcome,registered,location,promotion,billing,container,payment,custom'
+        'ai.flow.order': 'business,welcome,registered,order,location,promotion,billing,container,payment,custom'
     });
 
     const [flowOrder, setFlowOrder] = useState([
         'business',
         'welcome',
         'registered',
+        'order',
         'location',
         'promotion',
         'billing',
@@ -120,8 +216,99 @@ export default function ConfigPage() {
                     const settingsData = await settingsRes.json();
                     setSettings(prev => {
                         const updated = { ...prev, ...settingsData };
+                        
+                        // Migración automática del texto de ubicación si tiene el valor por defecto anterior
+                        if (!updated['ai.collect.location.text'] || 
+                            updated['ai.collect.location.text'] === 'Por favor, compárteme tu ubicación actual por el GPS nativo de WhatsApp 📍 para coordinar tu envío gratis a domicilio.' ||
+                            updated['ai.collect.location.text'].includes('Si NO devuelve dirección (cliente registrado')) {
+                            updated['ai.collect.location.text'] = `Cuando el cliente registrado ya tiene productos confirmados en el carrito y va a pasar a la etapa de datos de entrega, llama a "consultar_direccion_cliente".
+
+Si devuelve dirección y ubicación guardadas:
+
+Mensaje:
+"📍 *[Nombre]*, tenemos registrada esta dirección de entrega:
+
+✅ *Dirección:* [Dirección guardada]
+✅ *Distrito:* [Distrito guardado]
+✅ *Ubicación:* [URL Google Maps guardada]
+
+¿Enviamos a esta *misma dirección* o prefieres indicar una *dirección diferente*? 🏠"
+
+Comportamiento según respuesta:
+- MISMA DIRECCIÓN → Usar los datos guardados (dirección, distrito, ubicación). Saltar VERIFICACIÓN DE COBERTURA (ya fue validada antes) y FORMULARIO DE ENTREGA (solo pedir datos faltantes como Nombres/Apellidos si no están y Tipo de Comprobante). Ir directo a VALIDACIÓN DE COMPROBANTE.
+- DIRECCIÓN DIFERENTE → Ir a VERIFICACIÓN DE COBERTURA (sacar de Zonas de Envío) y FORMULARIO DE ENTREGA normal (pedir todos los datos desde cero).
+
+Si es CLIENTE NUEVO o el CLIENTE REGISTRADO NO tiene dirección guardada:
+- VERIFICACIÓN DE COBERTURA → Solicita su ubicación GPS nativa de WhatsApp. Cruza el distrito/coordenadas con la lista de "Zonas de Envío" para validar si el delivery está cubierto y calcular el costo de envío.
+- FORMULARIO DE ENTREGA → Solicita todos los datos desde cero: Nombres/Apellidos, Dirección exacta, Referencia de domicilio, Distrito y Tipo de Comprobante.
+- VALIDACIÓN DE COMPROBANTE → Pasa al siguiente paso.`;
+                        }
+
+                        // Migración automática de la instrucción de pedidos
+                        if (!updated['ai.order.collect.text'] || updated['ai.order.collect.text'] === 'Por favor, indícame qué productos o cuántas recargas deseas solicitar hoy de nuestro catálogo.') {
+                            updated['ai.order.collect.text'] = `REGLA: Cada vez que el cliente elija o pida un producto (ya sea desde el flujo inicial, la promo, upselling, o una solicitud directa), CONFIRMA lo agregado y pregunta si desea algo más.
+
+Formato del mensaje de confirmación:
+
+"✅ *¡Agregado!*
+
+🛒 *[Cantidad]x [Nombre del Producto]*
+💲 Precio unitario: *S/ [Precio_Unitario]*
+💰 Subtotal: *S/ [Subtotal]*
+
+[Si el carrito tiene más de 1 ítem, mostrar resumen parcial:]
+📦 *Tu carrito actual:*
+▫️ [Cantidad]x [Producto 1] (S/ [Precio_Unitario] c/u) — S/ [Subtotal1]
+▫️ [Cantidad]x [Producto 2] (S/ [Precio_Unitario] c/u) — S/ [Subtotal2]
+[...]
+💰 *Subtotal parcial: S/ [suma]*
+
+¿Deseas agregar *otro producto* o *confirmamos tu pedido*? 🤔"
+
+Comportamiento según respuesta:
+- QUIERE AGREGAR MÁS → Consulta Productos para mostrarle las opciones disponibles (los que NO tiene ya en el carrito o variantes diferentes). Cuando elija, agrega al CARRITO y vuelve a mostrar CONFIRMACIÓN DE AGREGADO.
+- CONFIRMA / ESTÁ CONFORME → Continuar al siguiente paso pendiente del FLUJO DEL PEDIDO (COBERTURA, FORMULARIO, etc.).
+
+Excepciones donde NO se pregunta "¿algo más?":
+- Ninguna. SIEMPRE se confirma el agregado y se pregunta.`;
+                        }
+                        // Migración de medios de pago
+                        if (!updated['ai.payment.methods'] || updated['ai.payment.methods'] === 'Yape, Plin, Efectivo contra entrega, Transferencias bancarias') {
+                            updated['ai.payment.methods'] = `💳 MEDIOS DE PAGO - ANTARQUI
+
+Para tu comodidad, aceptamos las siguientes opciones:
+
+🏦 Transferencia Bancaria (Empresa)
+Razón Social: ASCENDO PERÚ E.I.R.L
+RUC: 20611846721
+Banco: Interbank
+Cuenta Soles: 200-3005845511
+CCI: 003-200-003005845511-31
+
+📱 Billeteras Digitales (Yape/Plin)
+Nombre: Anabel Laime
+Número: 948 613 380
+
+💵 Otras opciones:
+Efectivo: Monto exacto contraentrega.
+Tarjeta de Crédito/Débito: Aceptamos todas las tarjetas.
+Pago por QR: Escanea el código que te proporcionaremos desde tu móvil.
+
+¡Gracias por elegir Antarqui! Si tienes alguna duda, escríbenos.`;
+                        }
+
                         if (updated['ai.flow.order']) {
-                            setFlowOrder(updated['ai.flow.order'].split(','));
+                            let loadedOrder = updated['ai.flow.order'].split(',');
+                            if (!loadedOrder.includes('order')) {
+                                const registeredIndex = loadedOrder.indexOf('registered');
+                                if (registeredIndex !== -1) {
+                                    loadedOrder.splice(registeredIndex + 1, 0, 'order');
+                                } else {
+                                    loadedOrder.push('order');
+                                }
+                                updated['ai.flow.order'] = loadedOrder.join(',');
+                            }
+                            setFlowOrder(loadedOrder);
                         }
                         return updated;
                     });
@@ -681,6 +868,11 @@ export default function ConfigPage() {
                                                             title = 'Saludo Registrado';
                                                             subtitle = settings['ai.greeting.registered'] || 'Sin saludo registrado';
                                                             stepIcon = <Icons.Book size={18} className="text-success" />;
+                                                        } else if (stepKey === 'order') {
+                                                            title = 'Solicitar Pedido';
+                                                            subtitle = settings['ai.order.collect.text'] || 'Instrucciones para solicitar el pedido';
+                                                            activeBadge = settings['ai.order.collect'] === 'true';
+                                                            stepIcon = <Icons.ShoppingCart size={18} className="text-primary" />;
                                                         } else if (stepKey === 'location') {
                                                             title = 'Pedir Ubicación GPS';
                                                             subtitle = settings['ai.collect.location.text'] || 'Mensaje de solicitud';
@@ -1016,6 +1208,36 @@ export default function ConfigPage() {
                                                             </div>
                                                         )}
 
+                                                         {/* 3.5. NODE ORDER COLLECT */}
+                                                         {activeNode === 'order' && (
+                                                             <div>
+                                                                 <Form.Group className="mb-3" controlId="collectOrder">
+                                                                     <Form.Check
+                                                                         type="switch"
+                                                                         id="collect-order-switch"
+                                                                         checked={settings['ai.order.collect'] === 'true'}
+                                                                         onChange={(e) => setSettings(prev => ({ ...prev, 'ai.order.collect': e.target.checked ? 'true' : 'false' }))}
+                                                                         label="Solicitar Pedido de entrada automáticamente"
+                                                                         className="fw-semibold text-dark"
+                                                                     />
+                                                                 </Form.Group>
+
+                                                                 {settings['ai.order.collect'] === 'true' && (
+                                                                     <Form.Group className="mb-3" controlId="collectOrderText">
+                                                                         <Form.Label className="fw-semibold small">Instrucciones / Mensaje para solicitar el pedido</Form.Label>
+                                                                         <Form.Control
+                                                                             as="textarea"
+                                                                             rows={4}
+                                                                             name="ai.order.collect.text"
+                                                                             value={settings['ai.order.collect.text'] || ''}
+                                                                             onChange={handleSettingChange}
+                                                                             placeholder="Ej: Por favor, indícame qué productos o cuántas recargas deseas solicitar hoy..."
+                                                                         />
+                                                                     </Form.Group>
+                                                                 )}
+                                                             </div>
+                                                         )}
+
                                                         {/* 4. NODE LOCATION GPS */}
                                                         {activeNode === 'location' && (
                                                             <div>
@@ -1233,11 +1455,12 @@ export default function ConfigPage() {
                                                                 <Form.Group className="mb-3" controlId="paymentMethods">
                                                                     <Form.Label className="fw-semibold small">Métodos de Pago Autorizados</Form.Label>
                                                                     <Form.Control
-                                                                        type="text"
+                                                                        as="textarea"
+                                                                        rows={8}
                                                                         name="ai.payment.methods"
                                                                         value={settings['ai.payment.methods']}
                                                                         onChange={handleSettingChange}
-                                                                        placeholder="Ej: Yape, Plin, Efectivo contra entrega"
+                                                                        placeholder="Coloca aquí los medios de pago detallados..."
                                                                     />
                                                                 </Form.Group>
                                                             </div>
@@ -1293,23 +1516,67 @@ export default function ConfigPage() {
                                                             {/* Render GPS location mock */}
                                                             {activeNode === 'location' && (
                                                                 <>
-                                                                    <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
-                                                                        <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
-                                                                            <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
-                                                                            <span className="text-dark" style={{ fontSize: '0.82rem' }}>
-                                                                                {formatWhatsappText(settings['ai.collect.location.text'])}
-                                                                            </span>
+                                                                    {/* Flujo A: Cliente Registrado */}
+                                                                    <div className="mb-3 border-bottom pb-2">
+                                                                        <span className="badge bg-primary mb-2 small text-uppercase" style={{ fontSize: '0.62rem' }}>1. Vista Cliente Registrado</span>
+                                                                        <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                            <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                                <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                                <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                                    {formatWhatsappText(extractScenario1Message(settings['ai.collect.location.text'])
+                                                                                        .replace('[Nombre]', 'Juan Carlos')
+                                                                                        .replace('[Dirección guardada]', 'Av. Larco 123')
+                                                                                        .replace('[Distrito guardado]', 'Miraflores')
+                                                                                        .replace('[URL Google Maps guardada]', 'https://maps.google.com/?q=-12.122,-77.028')
+                                                                                    )}
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="d-flex flex-column align-items-end mb-1">
-                                                                        <div className="p-2 rounded text-dark position-relative shadow-sm small" style={{ maxWidth: '85%', backgroundColor: '#d9fdd3', borderRadius: '10px 0px 10px 10px' }}>
-                                                                            <span className="fw-semibold text-primary d-block mb-1" style={{ fontSize: '0.7rem' }}>👤 Cliente:</span>
-                                                                            <div className="d-flex align-items-center gap-2 bg-light p-2 rounded border small">
-                                                                                <span style={{ fontSize: '1.2rem' }}>📍</span>
-                                                                                <div className="text-start">
-                                                                                    <strong style={{ fontSize: '0.72rem' }}>Ubicación compartida</strong>
-                                                                                    <br />
-                                                                                    <span className="text-muted" style={{ fontSize: '0.62rem' }}>Ver mapa en WhatsApp</span>
+
+                                                                    {/* Flujo B: Cliente Nuevo */}
+                                                                    <div>
+                                                                        <span className="badge bg-success mb-2 small text-uppercase" style={{ fontSize: '0.62rem' }}>2. Vista Cliente Nuevo / Sin Dirección</span>
+                                                                        
+                                                                        {/* Pregunta Distrito */}
+                                                                        <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                            <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                                <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                                <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                                    {formatWhatsappText(extractScenario2DistrictMessage(settings['ai.collect.location.text']))}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Respuesta Cliente */}
+                                                                        <div className="d-flex flex-column align-items-end mb-2">
+                                                                            <div className="p-2 rounded text-dark position-relative shadow-sm small" style={{ maxWidth: '85%', backgroundColor: '#d9fdd3', borderRadius: '10px 0px 10px 10px' }}>
+                                                                                <span className="fw-semibold text-primary d-block mb-1" style={{ fontSize: '0.7rem' }}>👤 Cliente:</span>
+                                                                                <span className="text-dark" style={{ fontSize: '0.82rem' }}>Santiago de Surco</span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Envia Formulario */}
+                                                                        <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
+                                                                            <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
+                                                                                <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
+                                                                                <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                                                                                    {formatWhatsappText(extractScenario2FormMessage(settings['ai.collect.location.text']).replace('[Distrito indicado]', 'Santiago de Surco'))}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Cliente responde mapa */}
+                                                                        <div className="d-flex flex-column align-items-end mb-1">
+                                                                            <div className="p-2 rounded text-dark position-relative shadow-sm small" style={{ maxWidth: '85%', backgroundColor: '#d9fdd3', borderRadius: '10px 0px 10px 10px' }}>
+                                                                                <span className="fw-semibold text-primary d-block mb-1" style={{ fontSize: '0.7rem' }}>👤 Cliente:</span>
+                                                                                <div className="d-flex align-items-center gap-2 bg-light p-2 rounded border small">
+                                                                                    <span style={{ fontSize: '1.2rem' }}>📍</span>
+                                                                                    <div className="text-start">
+                                                                                        <strong style={{ fontSize: '0.72rem' }}>Ubicación compartida</strong>
+                                                                                        <br />
+                                                                                        <span className="text-muted" style={{ fontSize: '0.62rem' }}>Ver mapa en WhatsApp</span>
+                                                                                    </div>
                                                                                 </div>
                                                                             </div>
                                                                         </div>
@@ -1379,12 +1646,13 @@ export default function ConfigPage() {
                                                             )}
 
                                                             {/* Default simple text message bubble fallback */}
-                                                            {['business', 'billing', 'container', 'payment', 'custom'].includes(activeNode) && (
+                                                            {['business', 'order', 'billing', 'container', 'payment', 'custom'].includes(activeNode) && (
                                                                 <div className="d-flex flex-column mb-2" style={{ maxWidth: '85%' }}>
                                                                     <div className="bg-white p-2 rounded shadow-sm small" style={{ borderRadius: '0px 10px 10px 10px' }}>
                                                                         <span className="fw-semibold text-success d-block mb-1" style={{ fontSize: '0.7rem' }}>🤖 Asesor IA:</span>
                                                                         <span className="text-dark" style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
                                                                             {activeNode === 'business' && formatWhatsappText(`¡Hola! Mi nombre es *${settings['ai.agent.name']}*. Trabajo en *${settings['ai.business.description']}*.`)}
+                                                                            {activeNode === 'order' && formatWhatsappText(settings['ai.order.collect.text'])}
                                                                             {activeNode === 'billing' && formatWhatsappText(settings['ai.collect.document.text'])}
                                                                             {activeNode === 'container' && formatWhatsappText(settings['ai.ask.container.text'])}
                                                                             {activeNode === 'payment' && formatWhatsappText(`Aceptamos los siguientes métodos de pago: *${settings['ai.payment.methods']}*.`)}

@@ -64,7 +64,7 @@ export const SidebarMenu = [
                         path: '/pedidos/view',
                     },
                     {
-                        name: 'Nuevo Pedido',
+                        name: 'Crear Pedidos',
                         path: '/pedidos/create',
                     },
                     {

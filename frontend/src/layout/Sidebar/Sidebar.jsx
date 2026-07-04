@@ -21,6 +21,13 @@ const Sidebar = () => {
         require("bootstrap/js/dist/collapse");
     }, []);
 
+    useEffect(() => {
+        const currentMenu = SidebarMenu.flatMap(r => r.contents).find(m => m.path && m.path !== '/' && pathname.startsWith(m.path));
+        if (currentMenu) {
+            setActiveMenu(currentMenu.name);
+        }
+    }, [pathname]);
+
     const handleClick = (menuName) => {
         setActiveMenu(menuName);
     }
