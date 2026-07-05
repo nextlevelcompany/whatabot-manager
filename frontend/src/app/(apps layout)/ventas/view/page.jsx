@@ -201,9 +201,10 @@ export default function SalesViewPage() {
     };
 
     const getEstadoBadge = (est) => {
-        if (est === 'completada') return <Badge bg="success-soft text-success">Completada</Badge>;
-        if (est === 'cancelada') return <Badge bg="danger-soft text-danger">Anulada</Badge>;
-        return <Badge bg="warning-soft text-warning-dark">Pendiente</Badge>;
+        if (est === 'completada') return <span className="badge badge-soft-success border border-success-soft">Completada</span>;
+        if (est === 'cancelada') return <span className="badge badge-soft-danger border border-danger-soft">Anulada</span>;
+        if (est === 'entregado') return <span className="badge badge-soft-info border border-info-soft">Entregado</span>;
+        return <span className="badge badge-soft-warning border border-warning-soft text-warning-dark">Pendiente</span>;
     };
 
     const getPagoBadge = (pago) => {
@@ -392,11 +393,12 @@ export default function SalesViewPage() {
                             {/* KANBAN VIEW */}
                             {viewMode === 'kanban' && (
                                 <div className="d-flex overflow-auto pb-4 gap-3 align-items-start" style={{ minHeight: 'calc(100vh - 280px)' }}>
-                                    {['pendiente', 'completada', 'cancelada'].map(stage => {
+                                    {['pendiente', 'entregado', 'completada', 'cancelada'].map(stage => {
                                         const colSales = filteredSales.filter(s => s.estado === stage);
                                         const colTotal = colSales.reduce((sum, s) => sum + parseFloat(s.total || 0), 0);
                                         const stageLabels = {
                                             pendiente: 'ENTREGA PENDIENTE',
+                                            entregado: 'ENTREGADO',
                                             completada: 'COMPLETADA',
                                             cancelada: 'ANULADA / DEVUELTA'
                                         };
@@ -439,8 +441,11 @@ export default function SalesViewPage() {
                                                                 onMouseLeave={() => setHoveredCardId(null)}
                                                             >
                                                                 <Card.Body className="p-3">
-                                                                    <div className="d-flex justify-content-between align-items-start mb-2">
-                                                                        <span className="fw-bold text-dark font-size-13">{sale.numero_venta}</span>
+                                                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                        <div className="d-flex align-items-center gap-2">
+                                                                            <span className="fw-bold text-dark font-size-13">{sale.numero_venta}</span>
+                                                                            {getEstadoBadge(sale.estado)}
+                                                                        </div>
                                                                         <span className="small text-muted">{sale.fecha_venta ? sale.fecha_venta.split('T')[0] : ''}</span>
                                                                     </div>
 

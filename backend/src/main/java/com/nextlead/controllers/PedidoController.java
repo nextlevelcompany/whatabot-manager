@@ -302,11 +302,11 @@ public class PedidoController {
                     // Update contact status to 'Cliente'
                     jdbcTemplate.update("UPDATE contacts SET status = 'Cliente' WHERE id = ?", currentPedido.get("contacto_id"));
 
-                    // Insert sale record with status 'completada' instead of 'pendiente'!
-                    // This is the bug fix: "lo pendiente debe ser el pago", so the sale itself is completed (completada)!
+                    // Insert sale record with status 'entregado' instead of 'completada'!
+                    // This allows validating and confirming the sale in Ventas without locking it beforehand.
                     jdbcTemplate.update(
                             "INSERT INTO ventas (contacto_id, usuario_id, numero_venta, fecha_venta, tipo_comprobante, subtotal, igv, total, monto_pagado, estado, estado_pago, metodo_pago, bidones_entregados, bidones_recogidos, notas, direccion_entrega) " +
-                            "VALUES (?, ?, ?, NOW(), 'nota_venta', ?, ?, ?, ?, 'completada', ?, ?, ?, ?, ?, ?)",
+                            "VALUES (?, ?, ?, NOW(), 'nota_venta', ?, ?, ?, ?, 'entregado', ?, ?, ?, ?, ?, ?)",
                             currentPedido.get("contacto_id"), defaultUserId, numeroVenta, stFinal, igvFinal, total, montoPagadoFinal, estadoPagoFinal, metodoPago, entregados, devueltos, notasCierre, currentPedido.get("direccion_entrega")
                     );
 
@@ -355,7 +355,7 @@ public class PedidoController {
                     // Update order details to link with sale
                     String nuevoEstadoPago = (pendientePago == 1) ? "Pendiente" : "Pagado";
                     jdbcTemplate.update(
-                            "UPDATE pedidos SET etapa_id = ?, venta_id = ?, estado_pago = ?, envases_entregados = ?, envases_devueltos = ?, quien_recibio = ?, monto_final = ?, metodo_pago_real = ?, venta_estado = 'completada', fecha_entrega = CURRENT_DATE WHERE id = ?",
+                            "UPDATE pedidos SET etapa_id = ?, venta_id = ?, estado_pago = ?, envases_entregados = ?, envases_devueltos = ?, quien_recibio = ?, monto_final = ?, metodo_pago_real = ?, venta_estado = 'entregado', fecha_entrega = CURRENT_DATE WHERE id = ?",
                             req.etapa_id, newVentaId, nuevoEstadoPago, entregados, devueltos, quienRecibio, total, metodoPago, req.pedido_id
                     );
                 }

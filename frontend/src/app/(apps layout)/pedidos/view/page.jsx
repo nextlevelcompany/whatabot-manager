@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { Row, Col, Card, Form, Button, Table, Badge, Dropdown, Spinner, InputGroup } from 'react-bootstrap';
 import { Search, List, Grid, Map, Settings, Trash, Edit, Plus, Send, RefreshCw, Calendar, MapPin, Truck, Download, Clock, ChevronLeft } from 'react-feather';
 import Swal from 'sweetalert2';
@@ -1077,8 +1078,8 @@ export default function PedidosViewPage() {
 
             // Count pending vs delivered for this day
             const dayOrders = (allData.pedidos || []).filter(p => p.fecha_entrega === dateStr);
-            const pendingCount = dayOrders.filter(p => p.venta_estado !== 'cancelada' && p.venta_estado !== 'completada').length;
-            const deliveredCount = dayOrders.filter(p => p.venta_estado === 'completada').length;
+            const pendingCount = dayOrders.filter(p => p.venta_estado !== 'cancelada' && p.venta_estado !== 'completada' && p.venta_estado !== 'entregado').length;
+            const deliveredCount = dayOrders.filter(p => p.venta_estado === 'completada' || p.venta_estado === 'entregado').length;
 
             list.push({ dateStr, label, dayNum, isToday, isActive, pendingCount, deliveredCount });
         }
@@ -1473,8 +1474,16 @@ export default function PedidosViewPage() {
                                                                     </div>
 
                                                                     {cardSettings.clientName && (
-                                                                        <div className="fw-extrabold text-dark mb-2" style={{ fontSize: '14px', letterSpacing: '-0.01em' }}>
-                                                                            {((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim()}
+                                                                        <div className="fw-extrabold mb-2" style={{ fontSize: '14px', letterSpacing: '-0.01em' }}>
+                                                                            <Link 
+                                                                                href={`/apps/contact/view-contact?id=${order.contacto_id}`} 
+                                                                                className="text-dark text-decoration-none transition-all"
+                                                                                style={{ cursor: 'pointer' }}
+                                                                                onMouseEnter={(e) => e.target.style.color = '#0d6efd'}
+                                                                                onMouseLeave={(e) => e.target.style.color = '#212529'}
+                                                                            >
+                                                                                {((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim() || 'Cliente Anónimo'}
+                                                                            </Link>
                                                                         </div>
                                                                     )}
 
@@ -1502,6 +1511,17 @@ export default function PedidosViewPage() {
                                                                     {cardSettings.products && order.productos_resumen && (
                                                                         <div className="p-2 mb-2 bg-light-soft border border-light rounded-3 text-secondary" style={{ fontSize: '11px', lineHeight: '1.4' }}>
                                                                             <span className="fw-semibold">🛒 {order.productos_resumen}</span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {order.venta_estado === 'entregado' && (
+                                                                        <div className="w-100 py-1.5 px-3 mb-2 rounded-3 text-center fw-bold text-info border border-info" style={{ fontSize: '11.5px', background: '#e0f2fe' }}>
+                                                                            ✓ PEDIDO ENTREGADO
+                                                                        </div>
+                                                                    )}
+                                                                    {order.venta_estado === 'completada' && (
+                                                                        <div className="w-100 py-1.5 px-3 mb-2 rounded-3 text-center fw-bold text-success border border-success" style={{ fontSize: '11.5px', background: '#dcfce7' }}>
+                                                                            ✓ ENTREGADO Y COBRADO
                                                                         </div>
                                                                     )}
 
