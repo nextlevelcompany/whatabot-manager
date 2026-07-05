@@ -9,6 +9,7 @@ services:
       POSTGRES_DB: nextlead
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: nextlead_password
+      TZ: America/Lima
     ports:
       - "5432:5432"
     volumes:
@@ -37,6 +38,7 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
       WHATSAPP_DISPLAY_NUMBER: ${WHATSAPP_DISPLAY_NUMBER}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      TZ: America/Lima
     ports:
       - "8080:8080"
     volumes:
@@ -57,6 +59,7 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - TZ=America/Lima
     depends_on:
       - backend
     networks:

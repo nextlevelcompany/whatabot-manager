@@ -1,8 +1,22 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { Row, Col, Card, Form, Button, Table, Badge, Dropdown, Spinner, InputGroup } from 'react-bootstrap';
-import { Search, List, Grid, Map, Settings, Trash, Edit, Plus, Send, RefreshCw, Calendar, MapPin, Truck } from 'react-feather';
+import { Search, List, Grid, Map, Settings, Trash, Edit, Plus, Send, RefreshCw, Calendar, MapPin, Truck, Download, Clock, ChevronLeft } from 'react-feather';
 import Swal from 'sweetalert2';
+
+// Helper to dynamically load SheetJS (XLSX) from CDN
+const loadSheetJS = () => {
+    return new Promise((resolve) => {
+        if (typeof window !== 'undefined' && window.XLSX) {
+            resolve(window.XLSX);
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js';
+        script.onload = () => resolve(window.XLSX);
+        document.body.appendChild(script);
+    });
+};
 
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
@@ -33,6 +47,21 @@ export default function PedidosViewPage() {
         'formato.fecha': 'd/m/Y',
         'formato.hora': '24h',
         'timezone': 'America/Lima'
+    });
+
+    // View configurations settings states
+    const [cardSettings, setCardSettings] = useState({
+        orderCode: true, clientName: true, address: true, deliveryDate: true, requestDate: true, products: true, payment: true, 
+        driver: true, total: true, priority: true, zone: true, winTag: true 
+    });
+    const [filterSettings, setFilterSettings] = useState({
+        dates: true, week: true, zones: true, drivers: true, payment: true, priority: true, category: true
+    });
+    const [listSettings, setListSettings] = useState({
+        orderCode: true, client: true, requestDate: true, date: true, zone: true, products: true, stage: true, total: true, actions: true
+    });
+    const [whatsappSettings, setWhatsappSettings] = useState({
+        orderCode: true, clientName: true, contactPerson: true, phone: true, address: true, zone: true, driver: true, date: true, products: true, total: true, mapLink: true
     });
 
     // Filters
@@ -95,14 +124,31 @@ export default function PedidosViewPage() {
 
     const formatDate = (dateStr) => {
         if (!dateStr) return '';
-        const parts = dateStr.split('-');
-        if (parts.length !== 3) return dateStr;
+        
+        let yyyy, mm, dd;
+        
+        // If it's a full ISO timestamp or has time info, parse it with timezone support
+        if (dateStr.includes('T') || (dateStr.includes(' ') && dateStr.includes(':'))) {
+            const normalized = dateStr.replace(' ', 'T');
+            const d = new Date(normalized);
+            if (!isNaN(d.getTime())) {
+                yyyy = String(d.getFullYear());
+                mm = String(d.getMonth() + 1).padStart(2, '0');
+                dd = String(d.getDate()).padStart(2, '0');
+            }
+        }
+        
+        // Fallback for simple date-only strings or failed parsing
+        if (!yyyy || !mm || !dd) {
+            const cleanDateStr = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
+            const parts = cleanDateStr.split('-');
+            if (parts.length !== 3) return dateStr;
+            yyyy = parts[0];
+            mm = parts[1];
+            dd = parts[2];
+        }
         
         const format = settings['formato.fecha'] || 'd/m/Y';
-        const yyyy = parts[0];
-        const mm = parts[1];
-        const dd = parts[2];
-        
         if (format === 'm/d/Y') {
             return `${mm}/${dd}/${yyyy}`;
         } else if (format === 'Y-m-d') {
@@ -152,7 +198,25 @@ export default function PedidosViewPage() {
                     console.error("Error parsing stored route", e);
                 }
             }
+
+            // Load view configurations
+            const getStored = (key, defaults) => {
+                try {
+                    const storedVal = localStorage.getItem(key);
+                    return storedVal ? { ...defaults, ...JSON.parse(storedVal) } : defaults;
+                } catch (e) {
+                    return defaults;
+                }
+            };
+            setCardSettings(getStored('pedidos_card_settings', cardSettings));
+            setFilterSettings(getStored('pedidos_filter_settings', filterSettings));
+            setListSettings(getStored('pedidos_list_settings', listSettings));
+            setWhatsappSettings(getStored('pedidos_whatsapp_settings', whatsappSettings));
+
+            const storedCollapsed = localStorage.getItem('pedidos_sidebar_collapsed') === 'true';
+            setSidebarCollapsed(storedCollapsed);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Filter Logic
@@ -175,6 +239,7 @@ export default function PedidosViewPage() {
             const matchesChofer = filterChofer === 'all' || String(p.chofer_id) === String(filterChofer);
             const matchesPago = filterPago === 'all' || p.estado_pago === filterPago;
             const matchesPrioridad = filterPrioridad === 'all' || p.prioridad === filterPrioridad;
+            const matchesCategoria = filterCategoria === 'all' || (p.categoria_nombre && String(p.categoria_nombre) === String(filterCategoria));
 
             let matchesDate = true;
             if (filterDesde || filterHasta) {
@@ -187,11 +252,11 @@ export default function PedidosViewPage() {
                 }
             }
 
-            return matchesSearch && matchesZona && matchesChofer && matchesPago && matchesPrioridad && matchesDate;
+            return matchesSearch && matchesZona && matchesChofer && matchesPago && matchesPrioridad && matchesCategoria && matchesDate;
         });
 
         setCurrentFiltered(filtered);
-    }, [allData.pedidos, searchTerm, filterDesde, filterHasta, filterZona, filterChofer, filterPago, filterPrioridad]);
+    }, [allData.pedidos, searchTerm, filterDesde, filterHasta, filterZona, filterChofer, filterPago, filterPrioridad, filterCategoria]);
 
     // Save Route
     const saveRoute = (newRoute) => {
@@ -226,6 +291,239 @@ export default function PedidosViewPage() {
     };
 
     const kpi = getKpiTotals();
+
+    const exportToExcel = async () => {
+        if (!currentFiltered || currentFiltered.length === 0) {
+            Swal.fire('Atención', 'No hay datos de pedidos para exportar con los filtros actuales.', 'info');
+            return;
+        }
+
+        try {
+            const XLSX = await loadSheetJS();
+            const dataToExport = currentFiltered.map(p => {
+                const colName = (allData.columns && allData.columns.find(c => String(c.id) === String(p.etapa_id))) 
+                    ? allData.columns.find(c => String(c.id) === String(p.etapa_id)).nombre 
+                    : 'N/A';
+                return {
+                    'Pedido': p.numero_pedido || '',
+                    'Cliente': ((p.contacto_nombre || '') + ' ' + (p.contacto_apellido || '')).trim(),
+                    'Fecha Registro': p.created_at || '',
+                    'Fecha Pedido': p.fecha_pedido || '',
+                    'Fecha Entrega': p.fecha_entrega || '',
+                    'Zona': p.zona_nombre || '',
+                    'Dirección': p.direccion_entrega || '',
+                    'Prioridad': p.prioridad || '',
+                    'Resumen Productos': p.productos_resumen || '',
+                    'Estado Pago': p.estado_pago || '',
+                    'Chofer/Conductor': ((p.chofer_n || '') + ' ' + (p.chofer_a || '')).trim() || 'No asignado',
+                    'Etapa': colName,
+                    'Total (S/)': parseFloat(p.total || 0),
+                    'Envases Entregados': parseInt(p.envases_entregados || 0),
+                    'Envases Devueltos': parseInt(p.envases_devueltos || 0),
+                    'Estado Venta': p.venta_estado || 'Pendiente'
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Pedidos");
+            
+            // Auto-fit columns
+            const maxLen = {};
+            dataToExport.forEach(row => {
+                Object.keys(row).forEach(key => {
+                    const val = String(row[key] || '');
+                    maxLen[key] = Math.max(maxLen[key] || key.length, val.length);
+                });
+            });
+            ws['!cols'] = Object.keys(maxLen).map(key => ({ wch: Math.min(30, maxLen[key] + 2) }));
+
+            const filename = 'Reporte_Pedidos_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+            XLSX.writeFile(wb, filename);
+
+            Swal.fire({
+                icon: 'success',
+                title: '¡Descarga Iniciada!',
+                text: 'El reporte de pedidos se ha exportado correctamente.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } catch (err) {
+            console.error("Error exporting to Excel", err);
+            Swal.fire('Error', 'No se pudo exportar a Excel.', 'error');
+        }
+    };
+
+    const openGlobalConfig = () => {
+        Swal.fire({
+            title: 'Configuración de Vista',
+            width: '750px',
+            html: `
+                <div class="text-start" style="font-family: sans-serif; font-size: 14px;">
+                    <ul class="nav nav-tabs nav-tabs-custom nav-justified mb-3" role="tablist" style="display: flex; list-style: none; border-bottom: 2px solid #e2e8f0; padding-left: 0; margin-bottom: 15px;">
+                        <li class="nav-item" style="flex: 1; text-align: center;"><a class="nav-link active fw-bold py-2" style="color: #3b82f6; display: block; border-bottom: 2px solid #3b82f6; text-decoration: none;" href="#config-cards">Tarjetas (Kanban)</a></li>
+                        <li class="nav-item" style="flex: 1; text-align: center;"><a class="nav-link py-2" style="color: #64748b; display: block; text-decoration: none;" href="#config-list">Tabla (Lista)</a></li>
+                        <li class="nav-item" style="flex: 1; text-align: center;"><a class="nav-link py-2" style="color: #64748b; display: block; text-decoration: none;" href="#config-filters">Filtros (Lateral)</a></li>
+                        <li class="nav-item" style="flex: 1; text-align: center;"><a class="nav-link py-2" style="color: #64748b; display: block; text-decoration: none;" href="#config-whatsapp">Plantilla WhatsApp</a></li>
+                    </ul>
+                    <div class="tab-content p-3 pt-0">
+                        <div class="tab-pane active" id="config-cards" style="display: block;">
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-req" ${cardSettings.requestDate ? 'checked' : ''}> <label class="small fw-bold">Registro Sistema</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-code" ${cardSettings.orderCode ? 'checked' : ''}> <label class="small fw-bold">Nro Pedido</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-client" ${cardSettings.clientName ? 'checked' : ''}> <label class="small fw-bold">Cliente</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-address" ${cardSettings.address ? 'checked' : ''}> <label class="small fw-bold">Dirección</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-date" ${cardSettings.deliveryDate ? 'checked' : ''}> <label class="small fw-bold">Fecha Entrega</label></div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-products" ${cardSettings.products ? 'checked' : ''}> <label class="small fw-bold">Productos</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-driver" ${cardSettings.driver ? 'checked' : ''}> <label class="small fw-bold">Chofer</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-total" ${cardSettings.total ? 'checked' : ''}> <label class="small fw-bold">Total</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-c-priority" ${cardSettings.priority ? 'checked' : ''}> <label class="small fw-bold">Prioridad</label></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane" id="config-list" style="display: none;">
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-req" ${listSettings.requestDate ? 'checked' : ''}> <label class="small fw-bold">Registro Sistema</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-code" ${listSettings.orderCode ? 'checked' : ''}> <label class="small fw-bold">Pedido</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-client" ${listSettings.client ? 'checked' : ''}> <label class="small fw-bold">Cliente</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-date" ${listSettings.date ? 'checked' : ''}> <label class="small fw-bold">Entrega</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-zone" ${listSettings.zone ? 'checked' : ''}> <label class="small fw-bold">Zona</label></div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-products" ${listSettings.products ? 'checked' : ''}> <label class="small fw-bold">Resumen Productos</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-stage" ${listSettings.stage ? 'checked' : ''}> <label class="small fw-bold">Etapa (Columna)</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-total" ${listSettings.total ? 'checked' : ''}> <label class="small fw-bold">Total</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-l-actions" ${listSettings.actions ? 'checked' : ''}> <label class="small fw-bold">Acciones</label></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane" id="config-filters" style="display: none;">
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-f-dates" ${filterSettings.dates ? 'checked' : ''}> <label class="small fw-bold">Rango Fechas</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-f-week" ${filterSettings.week ? 'checked' : ''}> <label class="small fw-bold">Prog. Semanal</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-f-zones" ${filterSettings.zones ? 'checked' : ''}> <label class="small fw-bold">Zonas</label></div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-f-drivers" ${filterSettings.drivers ? 'checked' : ''}> <label class="small fw-bold">Choferes</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-f-payment" ${filterSettings.payment ? 'checked' : ''}> <label class="small fw-bold">Edo. Pago</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-f-priority" ${filterSettings.priority ? 'checked' : ''}> <label class="small fw-bold">Prioridad</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-f-category" ${filterSettings.category ? 'checked' : ''}> <label class="small fw-bold">Categorías</label></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane" id="config-whatsapp" style="display: none;">
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-code" ${whatsappSettings.orderCode ? 'checked' : ''}> <label class="small fw-bold">Nro Pedido</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-client" ${whatsappSettings.clientName ? 'checked' : ''}> <label class="small fw-bold">Cliente</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-contact" ${whatsappSettings.contactPerson ? 'checked' : ''}> <label class="small fw-bold">Contacto (Empresas)</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-phone" ${whatsappSettings.phone ? 'checked' : ''}> <label class="small fw-bold">Teléfono</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-address" ${whatsappSettings.address ? 'checked' : ''}> <label class="small fw-bold">Dirección</label></div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-zone" ${whatsappSettings.zone ? 'checked' : ''}> <label class="small fw-bold">Zona Logística</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-driver" ${whatsappSettings.driver ? 'checked' : ''}> <label class="small fw-bold">Chofer</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-date" ${whatsappSettings.date ? 'checked' : ''}> <label class="small fw-bold">Fecha Entrega</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-products" ${whatsappSettings.products ? 'checked' : ''}> <label class="small fw-bold">Resumen Productos</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-total" ${whatsappSettings.total ? 'checked' : ''}> <label class="small fw-bold">Total / Edo Pago</label></div>
+                                    <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" id="cfg-w-map" ${whatsappSettings.mapLink ? 'checked' : ''}> <label class="small fw-bold">📍 Link Ubicación</label></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'Guardar',
+            didOpen: () => {
+                const triggerTabList = [].slice.call(document.querySelectorAll('.swal2-html-container .nav-link'));
+                triggerTabList.forEach(triggerEl => {
+                    triggerEl.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        triggerTabList.forEach(el => {
+                            el.classList.remove('active');
+                            el.style.color = '#64748b';
+                            el.style.borderBottom = 'none';
+                            const target = document.querySelector(el.getAttribute('href'));
+                            if (target) target.style.display = 'none';
+                        });
+                        triggerEl.classList.add('active');
+                        triggerEl.style.color = '#3b82f6';
+                        triggerEl.style.borderBottom = '2px solid #3b82f6';
+                        const target = document.querySelector(triggerEl.getAttribute('href'));
+                        if (target) target.style.display = 'block';
+                    });
+                });
+            },
+            preConfirm: () => {
+                return {
+                    cards: {
+                        orderCode: document.getElementById('cfg-c-code').checked,
+                        clientName: document.getElementById('cfg-c-client').checked,
+                        address: document.getElementById('cfg-c-address').checked,
+                        deliveryDate: document.getElementById('cfg-c-date').checked,
+                        requestDate: document.getElementById('cfg-c-req').checked,
+                        products: document.getElementById('cfg-c-products').checked,
+                        payment: true,
+                        driver: document.getElementById('cfg-c-driver').checked,
+                        total: document.getElementById('cfg-c-total').checked,
+                        priority: document.getElementById('cfg-c-priority').checked,
+                        winTag: true,
+                        zone: true
+                    },
+                    filters: {
+                        dates: document.getElementById('cfg-f-dates').checked,
+                        week: document.getElementById('cfg-f-week').checked,
+                        zones: document.getElementById('cfg-f-zones').checked,
+                        drivers: document.getElementById('cfg-f-drivers').checked,
+                        payment: document.getElementById('cfg-f-payment').checked,
+                        priority: document.getElementById('cfg-f-priority').checked,
+                        category: document.getElementById('cfg-f-category').checked
+                    },
+                    list: {
+                        orderCode: document.getElementById('cfg-l-code').checked,
+                        client: document.getElementById('cfg-l-client').checked,
+                        requestDate: document.getElementById('cfg-l-req').checked,
+                        date: document.getElementById('cfg-l-date').checked,
+                        zone: document.getElementById('cfg-l-zone').checked,
+                        products: document.getElementById('cfg-l-products').checked,
+                        stage: document.getElementById('cfg-l-stage').checked,
+                        total: document.getElementById('cfg-l-total').checked,
+                        actions: document.getElementById('cfg-l-actions').checked
+                    },
+                    whatsapp: {
+                        orderCode: document.getElementById('cfg-w-code').checked,
+                        clientName: document.getElementById('cfg-w-client').checked,
+                        contactPerson: document.getElementById('cfg-w-contact').checked,
+                        phone: document.getElementById('cfg-w-phone').checked,
+                        address: document.getElementById('cfg-w-address').checked,
+                        zone: document.getElementById('cfg-w-zone').checked,
+                        driver: document.getElementById('cfg-w-driver').checked,
+                        date: document.getElementById('cfg-w-date').checked,
+                        products: document.getElementById('cfg-w-products').checked,
+                        total: document.getElementById('cfg-w-total').checked,
+                        mapLink: document.getElementById('cfg-w-map').checked
+                    }
+                };
+            }
+        }).then((r) => {
+            if (r.isConfirmed) {
+                setCardSettings(r.value.cards);
+                setFilterSettings(r.value.filters);
+                setListSettings(r.value.list);
+                setWhatsappSettings(r.value.whatsapp);
+                localStorage.setItem('pedidos_card_settings', JSON.stringify(r.value.cards));
+                localStorage.setItem('pedidos_filter_settings', JSON.stringify(r.value.filters));
+                localStorage.setItem('pedidos_list_settings', JSON.stringify(r.value.list));
+                localStorage.setItem('pedidos_whatsapp_settings', JSON.stringify(r.value.whatsapp));
+            }
+        });
+    };
 
     // Map initialization & rendering
     useEffect(() => {
@@ -701,28 +999,45 @@ export default function PedidosViewPage() {
     };
 
     const shareOrderWhatsapp = (order) => {
-        let client = ((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim();
+        let client = '';
+        let contact = '';
+        let phone = '';
+
+        if (order.tipo_contacto === 'empresa') {
+            client = (order.contacto_nombre || '').trim();
+            contact = (order.persona_vinculada || 'No especificado').trim();
+            phone = (order.telefono_vinculado || order.telefono_movil || order.telefono_fijo || 'Sin teléfono').trim();
+        } else {
+            client = ((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim();
+            if (order.empresa_nombre) client = `${order.empresa_nombre} (${client})`;
+            phone = (order.telefono_movil || order.telefono_fijo || 'Sin teléfono').trim();
+        }
+
         const date = formatDate(order.fecha_entrega);
         const time = order.hora_entrega ? formatTime(order.hora_entrega) : '';
         const driver = order.chofer_n ? `${order.chofer_n} ${order.chofer_a || ''}`.trim() : 'No asignado';
+        const total = parseFloat(order.total || 0).toFixed(2);
 
         let msg = `📦 *DETALLES DEL PEDIDO*\n\n`;
-        msg += `*Pedido:* ${order.numero_pedido || 'N/A'}\n`;
-        msg += `👤 *Cliente:* ${client}\n`;
-        msg += `📞 *Teléfono:* ${order.telefono_movil || 'S.T.'}\n`;
-        msg += `📍 *Dirección:* ${order.direccion_entrega} (${order.distrito || 'S.D.'})\n`;
-        msg += `🗺️ *Zona:* ${order.zona_nombre || 'N/A'}\n`;
-        msg += `🚛 *Chofer:* ${driver}\n`;
-        msg += `📅 *Fecha Entrega:* ${date}${time ? ' ' + time : ''}\n`;
-        msg += `🛒 *Productos:* ${order.productos_resumen || ''}\n`;
-        msg += `💰 *Total / Pago:* S/ ${parseFloat(order.total || 0).toFixed(2)} (${order.estado_pago})\n`;
+        if (whatsappSettings.orderCode) msg += `*Pedido:* ${order.numero_pedido || 'N/A'}\n`;
+        if (whatsappSettings.clientName) msg += `👤 *Cliente:* ${client}\n`;
+        if (whatsappSettings.contactPerson && order.tipo_contacto === 'empresa') msg += `👤 *Contacto:* ${contact}\n`;
+        if (whatsappSettings.phone) msg += `📞 *Teléfono:* ${phone}\n`;
+        if (whatsappSettings.address) msg += `📍 *Dirección:* ${order.direccion_entrega} (${order.distrito || 'S.D.'})\n`;
+        if (whatsappSettings.zone) msg += `🗺️ *Zona:* ${order.zona_nombre || 'N/A'}\n`;
+        if (whatsappSettings.driver) msg += `🚛 *Chofer:* ${driver}\n`;
+        if (whatsappSettings.date) msg += `📅 *Fecha Entrega:* ${date}${time ? ' ' + time : ''}\n`;
+        if (whatsappSettings.products) msg += `🛒 *Productos:* ${order.productos_resumen || ''}\n`;
+        if (whatsappSettings.total) msg += `💰 *Total / Pago:* S/ ${total} (${order.estado_pago})\n`;
 
-        if (order.notas) msg += `📝 *Notas:* ${order.notas}\n`;
+        if (order.notes || order.notas) msg += `📝 *Notas:* ${order.notes || order.notas}\n`;
 
-        if (order.latitud && order.longitud) {
-            msg += `\n📍 *Ubicación:* https://www.google.com/maps?q=${order.latitud},${order.longitud}`;
-        } else {
-            msg += `\n📍 *Ubicación:* https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.direccion_entrega + ' ' + (order.distrito || ''))}`;
+        if (whatsappSettings.mapLink) {
+            if (order.latitud && order.longitud) {
+                msg += `\n📍 *Ubicación:* https://www.google.com/maps?q=${order.latitud},${order.longitud}`;
+            } else {
+                msg += `\n📍 *Ubicación:* https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.direccion_entrega + ' ' + (order.distrito || ''))}`;
+            }
         }
 
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -747,6 +1062,7 @@ export default function PedidosViewPage() {
         const list = [];
         const days = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
         const now = new Date();
+        now.setHours(12, 0, 0, 0); // Normalize to midday to prevent timezone/DST date shifts
         const start = new Date(now);
         start.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
 
@@ -775,13 +1091,26 @@ export default function PedidosViewPage() {
         <div className="p-4" style={{ background: '#f8fafc', minHeight: '100vh' }}>
             {/* Header Toolbar */}
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 bg-white p-3 rounded shadow-sm border mb-4">
-                <h4 className="mb-0 text-primary fw-bold d-flex align-items-center">
-                    <Button variant="link" className="p-0 me-2 text-primary" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-                        <Settings size={20} />
+                <div className="d-flex align-items-center">
+                    <Button 
+                        variant={sidebarCollapsed ? "primary" : "outline-primary"} 
+                        size="sm" 
+                        className="me-3 d-flex align-items-center gap-1 shadow-sm" 
+                        onClick={() => {
+                            const newCollapsed = !sidebarCollapsed;
+                            setSidebarCollapsed(newCollapsed);
+                            localStorage.setItem('pedidos_sidebar_collapsed', String(newCollapsed));
+                        }} 
+                        title={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
+                    >
+                        <List size={15} />
+                        <span className="fw-semibold">{sidebarCollapsed ? "Mostrar Filtros" : "Ocultar Filtros"}</span>
                     </Button>
-                    <Truck size={24} className="me-2" />
-                    Logística y Pedidos
-                </h4>
+                    <h4 className="mb-0 text-primary fw-bold d-flex align-items-center">
+                        <Truck size={24} className="me-2" />
+                        Logística y Pedidos
+                    </h4>
+                </div>
                 <div style={{ maxWidth: '400px', flexGrow: 1 }} className="mx-lg-4">
                     <InputGroup>
                         <InputGroup.Text className="bg-white border-end-0">
@@ -822,6 +1151,24 @@ export default function PedidosViewPage() {
                             <Map size={14} className="me-1" /> MAPA
                         </Button>
                     </div>
+                    <Button 
+                        variant="success" 
+                        className="fw-bold d-inline-flex align-items-center justify-content-center bg-success text-white border-0" 
+                        style={{ height: '40px' }} 
+                        onClick={exportToExcel}
+                        title="Exportar a Excel"
+                    >
+                        <Download size={16} className="me-1" /> EXCEL
+                    </Button>
+                    <Button 
+                        variant="light" 
+                        className="fw-bold d-inline-flex align-items-center justify-content-center border me-2" 
+                        style={{ height: '40px' }} 
+                        onClick={openGlobalConfig}
+                        title="Configurar vista"
+                    >
+                        <Settings size={16} />
+                    </Button>
                     <Button variant="primary" className="fw-bold" style={{ height: '40px' }} href="/pedidos/create">
                         <Plus size={16} className="me-1" /> NUEVO
                     </Button>
@@ -870,7 +1217,21 @@ export default function PedidosViewPage() {
                     <Col lg={3} className="mb-4">
                         <div className="bg-white p-4 rounded shadow-sm border" style={{ position: 'sticky', top: '20px' }}>
                             <div className="d-flex justify-content-between align-items-center mb-4">
-                                <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>FILTROS</h5>
+                                <div className="d-flex align-items-center gap-2">
+                                    <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>FILTROS</h5>
+                                    <Button
+                                        variant="light"
+                                        size="sm"
+                                        className="p-1 border d-flex align-items-center justify-content-center rounded-circle"
+                                        onClick={() => {
+                                            setSidebarCollapsed(true);
+                                            localStorage.setItem('pedidos_sidebar_collapsed', 'true');
+                                        }}
+                                        title="Ocultar filtros"
+                                    >
+                                        <ChevronLeft size={14} className="text-muted" />
+                                    </Button>
+                                </div>
                                 <Button
                                     variant="link"
                                     size="sm"
@@ -890,91 +1251,131 @@ export default function PedidosViewPage() {
                             </div>
 
                             {/* Date filters */}
-                            <div className="mb-4">
-                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Rango de Fechas</span>
-                                <Row className="g-2">
-                                    <Col xs={6}>
-                                        <Form.Control
-                                            type="date"
-                                            size="sm"
-                                            value={filterDesde}
-                                            onChange={(e) => setFilterDesde(e.target.value)}
-                                        />
-                                    </Col>
-                                    <Col xs={6}>
-                                        <Form.Control
-                                            type="date"
-                                            size="sm"
-                                            value={filterHasta}
-                                            onChange={(e) => setFilterHasta(e.target.value)}
-                                        />
-                                    </Col>
-                                </Row>
-                            </div>
+                            {filterSettings.dates && (
+                                <div className="mb-4">
+                                    <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Rango de Fechas</span>
+                                    <Row className="g-2">
+                                        <Col xs={6}>
+                                            <Form.Control
+                                                type="date"
+                                                size="sm"
+                                                value={filterDesde}
+                                                onChange={(e) => setFilterDesde(e.target.value)}
+                                            />
+                                        </Col>
+                                        <Col xs={6}>
+                                            <Form.Control
+                                                type="date"
+                                                size="sm"
+                                                value={filterHasta}
+                                                onChange={(e) => setFilterHasta(e.target.value)}
+                                            />
+                                        </Col>
+                                    </Row>
+                                </div>
+                            )}
 
                             {/* Weekly Programming */}
-                            <div className="mb-4">
-                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Programación Semanal</span>
-                                <div className="d-flex justify-content-between gap-1">
-                                    {weekDays.map(day => (
-                                        <button
-                                            key={day.dateStr}
-                                            onClick={() => filterByDay(day.dateStr)}
-                                            className={`btn btn-sm d-flex flex-column align-items-center justify-content-center p-1 rounded-3 ${
-                                                day.isActive ? 'btn-primary' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
-                                            }`}
-                                            style={{ flex: 1, minHeight: '56px' }}
-                                        >
-                                            <span style={{ fontSize: '7.5px', fontWeight: '800' }}>{day.label}</span>
-                                            <span className="fw-bold" style={{ fontSize: '11px' }}>{day.dayNum}</span>
-                                            <div className="d-flex gap-1 mt-1">
-                                                <Badge bg={day.isActive ? 'white' : 'primary'} style={{ fontSize: '6px', padding: '2px 4px' }} className={day.isActive ? 'text-primary' : ''}>
-                                                    {day.pendingCount}
-                                                </Badge>
-                                            </div>
-                                        </button>
-                                    ))}
+                            {filterSettings.week && (
+                                <div className="mb-4">
+                                    <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Programación Semanal</span>
+                                    <div className="d-flex justify-content-between gap-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                                        {weekDays.map(day => (
+                                            <button
+                                                key={day.dateStr}
+                                                onClick={() => filterByDay(day.dateStr)}
+                                                className={`btn btn-sm d-flex flex-column align-items-center justify-content-center p-1 rounded-3 ${
+                                                    day.isActive ? 'btn-primary' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
+                                                }`}
+                                                style={{ minHeight: '56px', width: '100%', minWidth: 0, overflow: 'hidden' }}
+                                            >
+                                                <span style={{ fontSize: '7.5px', fontWeight: '800' }}>{day.label}</span>
+                                                <span className="fw-bold" style={{ fontSize: '11px' }}>{day.dayNum}</span>
+                                                <div className="d-flex gap-1 mt-1">
+                                                    <span className="d-flex align-items-center justify-content-center fw-bold rounded-circle" style={{ 
+                                                        width: '14px', 
+                                                        height: '14px', 
+                                                        fontSize: '6.5px',
+                                                        backgroundColor: day.isActive ? '#ffffff' : '#0d6efd',
+                                                        color: day.isActive ? '#0d6efd' : '#ffffff'
+                                                    }}>
+                                                        {day.pendingCount}
+                                                    </span>
+                                                    {day.deliveredCount > 0 && (
+                                                        <span className="d-flex align-items-center justify-content-center fw-bold rounded-circle" style={{ 
+                                                            width: '14px', 
+                                                            height: '14px', 
+                                                            fontSize: '6.5px',
+                                                            backgroundColor: day.isActive ? '#ffffff' : '#198754',
+                                                            color: day.isActive ? '#198754' : '#ffffff'
+                                                        }}>
+                                                            {day.deliveredCount}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Logistics Zone */}
-                            <div className="mb-3">
-                                <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Zona Logística</span>
-                                <Form.Select size="sm" value={filterZona} onChange={(e) => setFilterZona(e.target.value)}>
-                                    <option value="all">Todas las zonas</option>
-                                    {allData.zonas.map(z => <option key={z.id} value={z.id}>{z.nombre}</option>)}
-                                </Form.Select>
-                            </div>
+                            {filterSettings.zones && (
+                                <div className="mb-3">
+                                    <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Zona Logística</span>
+                                    <Form.Select size="sm" value={filterZona} onChange={(e) => setFilterZona(e.target.value)}>
+                                        <option value="all">Todas las zonas</option>
+                                        {allData.zonas.map(z => <option key={z.id} value={z.id}>{z.nombre}</option>)}
+                                    </Form.Select>
+                                </div>
+                            )}
 
                             {/* Driver */}
-                            <div className="mb-3">
-                                <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Conductor</span>
-                                <Form.Select size="sm" value={filterChofer} onChange={(e) => setFilterChofer(e.target.value)}>
-                                    <option value="all">Todos los choferes</option>
-                                    {allData.drivers.map(d => <option key={d.id} value={d.id}>{d.nombre} {d.apellido}</option>)}
-                                </Form.Select>
-                            </div>
+                            {filterSettings.drivers && (
+                                <div className="mb-3">
+                                    <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Conductor</span>
+                                    <Form.Select size="sm" value={filterChofer} onChange={(e) => setFilterChofer(e.target.value)}>
+                                        <option value="all">Todos los choferes</option>
+                                        {allData.drivers.map(d => <option key={d.id} value={d.id}>{d.nombre} {d.apellido}</option>)}
+                                    </Form.Select>
+                                </div>
+                            )}
 
                             {/* Payment Status */}
-                            <div className="mb-3">
-                                <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Estado de Pago</span>
-                                <Form.Select size="sm" value={filterPago} onChange={(e) => setFilterPago(e.target.value)}>
-                                    <option value="all">Cualquier estado</option>
-                                    <option value="Pendiente">Pendiente</option>
-                                    <option value="Pagado">Pagado</option>
-                                </Form.Select>
-                            </div>
+                            {filterSettings.payment && (
+                                <div className="mb-3">
+                                    <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Estado de Pago</span>
+                                    <Form.Select size="sm" value={filterPago} onChange={(e) => setFilterPago(e.target.value)}>
+                                        <option value="all">Cualquier estado</option>
+                                        <option value="Pendiente">Pendiente</option>
+                                        <option value="Pagado">Pagado</option>
+                                    </Form.Select>
+                                </div>
+                            )}
 
                             {/* Priority */}
-                            <div>
-                                <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Prioridad</span>
-                                <Form.Select size="sm" value={filterPrioridad} onChange={(e) => setFilterPrioridad(e.target.value)}>
-                                    <option value="all">Todas</option>
-                                    <option value="Alta">Alta</option>
-                                    <option value="Media">Media</option>
-                                    <option value="Baja">Baja</option>
-                                </Form.Select>
-                            </div>
+                            {filterSettings.priority && (
+                                <div className="mb-3">
+                                    <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Prioridad</span>
+                                    <Form.Select size="sm" value={filterPrioridad} onChange={(e) => setFilterPrioridad(e.target.value)}>
+                                        <option value="all">Todas</option>
+                                        <option value="Alta">Alta</option>
+                                        <option value="Media">Media</option>
+                                        <option value="Baja">Baja</option>
+                                    </Form.Select>
+                                </div>
+                            )}
+
+                            {/* Category */}
+                            {filterSettings.category && (
+                                <div>
+                                    <span className="d-block text-muted fw-bold mb-1" style={{ fontSize: '10px' }}>Categoría</span>
+                                    <Form.Select size="sm" value={filterCategoria} onChange={(e) => setFilterCategoria(e.target.value)}>
+                                        <option value="all">Todas</option>
+                                        {allData.categories && allData.categories.map((c, i) => <option key={i} value={c.nombre}>{c.nombre}</option>)}
+                                    </Form.Select>
+                                </div>
+                            )}
                         </div>
                     </Col>
                 )}
@@ -1052,36 +1453,53 @@ export default function PedidosViewPage() {
                                                             >
                                                                 <Card.Body className="p-3">
                                                                     <div className="d-flex justify-content-between align-items-center mb-2">
-                                                                        <Badge bg="light" className="text-muted border fw-bold px-2 py-1 shadow-none" style={{ fontSize: '10px', borderRadius: '4px' }}>
-                                                                            📄 {order.numero_pedido}
-                                                                        </Badge>
+                                                                        {cardSettings.orderCode ? (
+                                                                            <Badge bg="light" className="text-muted border fw-bold px-2 py-1 shadow-none" style={{ fontSize: '10px', borderRadius: '4px' }}>
+                                                                                📄 {order.numero_pedido}
+                                                                            </Badge>
+                                                                        ) : <div />}
                                                                         <div className="d-flex gap-1 align-items-center">
                                                                             {order.es_reprogramado == 1 && (
                                                                                 <span className="badge bg-warning-soft text-warning border border-warning-soft" style={{ fontSize: '9px', padding: '3px 6px', borderRadius: '4px' }}>
                                                                                     🔄 Reprog.
                                                                                 </span>
                                                                             )}
-                                                                            <span className={`badge ${
-                                                                                order.prioridad === 'Alta' ? 'bg-danger-soft text-danger border border-danger-soft' : order.prioridad === 'Media' ? 'bg-warning-soft text-warning border border-warning-soft' : 'bg-success-soft text-success border border-success-soft'
-                                                                            }`} style={{ fontSize: '9px', padding: '3px 6px', borderRadius: '4px' }}>{order.prioridad}</span>
+                                                                            {cardSettings.priority && (
+                                                                                <span className={`badge ${
+                                                                                    order.prioridad === 'Alta' ? 'bg-danger-soft text-danger border border-danger-soft' : order.prioridad === 'Media' ? 'bg-warning-soft text-warning border border-warning-soft' : 'bg-success-soft text-success border border-success-soft'
+                                                                                }`} style={{ fontSize: '9px', padding: '3px 6px', borderRadius: '4px' }}>{order.prioridad}</span>
+                                                                            )}
                                                                         </div>
                                                                     </div>
 
-                                                                    <div className="fw-extrabold text-dark mb-2" style={{ fontSize: '14px', letterSpacing: '-0.01em' }}>
-                                                                        {((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim()}
-                                                                    </div>
+                                                                    {cardSettings.clientName && (
+                                                                        <div className="fw-extrabold text-dark mb-2" style={{ fontSize: '14px', letterSpacing: '-0.01em' }}>
+                                                                            {((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim()}
+                                                                        </div>
+                                                                    )}
 
-                                                                    <div className="d-flex align-items-center gap-2 text-muted mb-1" style={{ fontSize: '11.5px' }} title={order.latitud ? "Tiene coordenadas GPS" : "Sin coordenadas GPS"}>
-                                                                        <MapPin size={12} className={order.latitud ? "text-success" : "text-muted"} />
-                                                                        <span className="text-truncate" style={{ maxWidth: '210px' }}>{order.direccion_entrega}</span>
-                                                                    </div>
+                                                                    {cardSettings.address && (
+                                                                        <div className="d-flex align-items-center gap-2 text-muted mb-1" style={{ fontSize: '11.5px' }} title={order.latitud ? "Tiene coordenadas GPS" : "Sin coordenadas GPS"}>
+                                                                            <MapPin size={12} className={order.latitud ? "text-success" : "text-muted"} />
+                                                                            <span className="text-truncate" style={{ maxWidth: '210px' }}>{order.direccion_entrega}</span>
+                                                                        </div>
+                                                                    )}
 
-                                                                    <div className="d-flex align-items-center gap-2 text-muted mb-2.5" style={{ fontSize: '11.5px' }}>
-                                                                        <Calendar size={12} className="text-secondary" />
-                                                                        <span>Entrega: <strong className="text-dark">{formatDate(order.fecha_entrega)}{order.hora_entrega ? ` ${formatTime(order.hora_entrega)}` : ''}</strong></span>
-                                                                    </div>
+                                                                    {cardSettings.requestDate && (
+                                                                        <div className="d-flex align-items-center gap-2 text-muted mb-1" style={{ fontSize: '11.5px' }}>
+                                                                            <Clock size={12} className="text-secondary" />
+                                                                            <span>Reg: <strong className="text-dark">{formatDate(order.created_at || order.fecha_registro || order.fecha_venta)}</strong></span>
+                                                                        </div>
+                                                                    )}
 
-                                                                    {order.productos_resumen && (
+                                                                    {cardSettings.deliveryDate && (
+                                                                        <div className="d-flex align-items-center gap-2 text-muted mb-2.5" style={{ fontSize: '11.5px' }}>
+                                                                            <Calendar size={12} className="text-secondary" />
+                                                                            <span>Entrega: <strong className="text-dark">{formatDate(order.fecha_entrega)}{order.hora_entrega ? ` ${formatTime(order.hora_entrega)}` : ''}</strong></span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {cardSettings.products && order.productos_resumen && (
                                                                         <div className="p-2 mb-2 bg-light-soft border border-light rounded-3 text-secondary" style={{ fontSize: '11px', lineHeight: '1.4' }}>
                                                                             <span className="fw-semibold">🛒 {order.productos_resumen}</span>
                                                                         </div>
@@ -1094,14 +1512,16 @@ export default function PedidosViewPage() {
                                                                             }`} style={{ fontSize: '9px', padding: '3px 6px', display: 'inline-block', width: 'fit-content' }}>
                                                                                 {order.estado_pago === 'Pagado' ? '💳 Pagado' : '💵 Pendiente'}
                                                                             </span>
-                                                                            {order.chofer_n && (
+                                                                            {cardSettings.driver && order.chofer_n && (
                                                                                 <div className="text-white rounded px-2 py-0.5 fw-bold" style={{ background: dColor, fontSize: '9px', display: 'inline-block', width: 'fit-content' }}>
                                                                                     🚚 [{order.vehiculo_placa}] {order.chofer_n}
                                                                                 </div>
                                                                             )}
                                                                         </div>
                                                                         <div className="text-end">
-                                                                            <strong className="text-primary d-block mb-1" style={{ fontSize: '14px', letterSpacing: '-0.02em' }}>S/ {parseFloat(order.total || 0).toFixed(2)}</strong>
+                                                                            {cardSettings.total ? (
+                                                                                <strong className="text-primary d-block mb-1" style={{ fontSize: '14px', letterSpacing: '-0.02em' }}>S/ {parseFloat(order.total || 0).toFixed(2)}</strong>
+                                                                            ) : <div className="mb-1" style={{ height: '18px' }} />}
                                                                             <div className="d-flex gap-2 justify-content-end">
                                                                                 <Button variant="link" className="p-1 text-success hover-bg rounded-circle" onClick={() => shareOrderWhatsapp(order)} title="Compartir WhatsApp">
                                                                                     <Send size={13} />
@@ -1139,68 +1559,153 @@ export default function PedidosViewPage() {
                                 </div>
                             )}
 
-                            {/* LIST VIEW */}
-                            {viewMode === 'list' && (
-                                <Card className="border-0 shadow-sm rounded-3 overflow-hidden">
-                                    <Table hover responsive className="align-middle mb-0">
-                                        <thead className="table-light">
-                                            <tr>
-                                                <th>Nro Pedido</th>
-                                                <th>Cliente</th>
-                                                <th>Fecha Entrega</th>
-                                                <th>Zona</th>
-                                                <th>Resumen Productos</th>
-                                                <th>Total</th>
-                                                <th>Pago</th>
-                                                <th className="text-end">Acciones</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {currentFiltered.map(order => (
-                                                <tr key={order.id}>
-                                                    <td>
-                                                        <Badge bg="light" className="text-primary border fw-bold">{order.numero_pedido}</Badge>
-                                                    </td>
-                                                    <td>
-                                                        <div className="fw-bold text-dark">{((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim()}</div>
-                                                    </td>
-                                                    <td>
-                                                        <span className="small text-muted">{formatDate(order.fecha_entrega)}{order.hora_entrega ? ` ${formatTime(order.hora_entrega)}` : ''}</span>
-                                                    </td>
-                                                    <td>
-                                                        <Badge bg="light" className="text-dark border">{order.zona_nombre || 'N/A'}</Badge>
-                                                    </td>
-                                                    <td style={{ maxWidth: '250px' }} className="text-truncate">
-                                                        <span className="small text-muted" title={order.productos_resumen}>{order.productos_resumen || 'Sin detalle'}</span>
-                                                    </td>
-                                                    <td>
-                                                        <span className="fw-bold text-primary">S/ {parseFloat(order.total || 0).toFixed(2)}</span>
-                                                    </td>
-                                                    <td>
-                                                        <Badge bg={order.estado_pago === 'Pagado' ? 'success' : 'danger'}>{order.estado_pago}</Badge>
-                                                    </td>
-                                                    <td className="text-end">
-                                                        <Button variant="link" className="p-1 text-success" onClick={() => shareOrderWhatsapp(order)}>
-                                                            <Send size={15} />
-                                                        </Button>
-                                                        <a href={`/pedidos/create?edit_id=${order.id}`} className="btn btn-link p-1 text-primary">
-                                                            <Edit size={15} />
-                                                        </a>
-                                                        <Button variant="link" className="p-1 text-danger" onClick={() => deleteOrder(order.id)}>
-                                                            <Trash size={15} />
-                                                        </Button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {currentFiltered.length === 0 && (
-                                                <tr>
-                                                    <td colSpan={8} className="text-center py-4 text-muted">No se encontraron pedidos.</td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </Table>
-                                </Card>
-                            )}
+                             {/* LIST VIEW */}
+                             {viewMode === 'list' && (
+                                 <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white">
+                                     <Table hover responsive className="align-middle mb-0 text-nowrap">
+                                         <thead className="table-light text-muted font-size-12">
+                                             <tr>
+                                                 {listSettings.orderCode && <th className="ps-3">Nro Pedido</th>}
+                                                 {listSettings.client && <th>Cliente</th>}
+                                                 {listSettings.requestDate && <th>Registro</th>}
+                                                 {listSettings.date && <th>Fecha Entrega</th>}
+                                                 {listSettings.zone && <th>Zona</th>}
+                                                 {listSettings.products && <th>Resumen Productos</th>}
+                                                 {listSettings.stage && <th>Etapa</th>}
+                                                 {listSettings.total && <th>Total</th>}
+                                                 <th>Pago</th>
+                                                 {listSettings.actions && <th className="text-end pe-3">Acciones</th>}
+                                             </tr>
+                                         </thead>
+                                         <tbody className="font-size-13">
+                                             {currentFiltered.map(order => {
+                                                 const orderCol = allData.columns.find(col => String(col.id) === String(order.columna_id));
+                                                 const colName = orderCol ? orderCol.nombre : 'Sin etapa';
+                                                 const fullName = ((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim();
+                                                 const initials = fullName ? fullName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : '?';
+                                                 const colors = ['info', 'warning', 'success', 'danger', 'primary', 'violet'];
+                                                 const avtBg = colors[(order.contacto_id || order.id || 0) % colors.length];
+
+                                                 return (
+                                                     <tr key={order.id}>
+                                                         {listSettings.orderCode && (
+                                                             <td className="ps-3">
+                                                                 <strong className="text-dark" style={{ fontSize: '13px' }}>{order.numero_pedido}</strong>
+                                                             </td>
+                                                         )}
+                                                         {listSettings.client && (
+                                                             <td>
+                                                                 <div className="d-flex align-items-center">
+                                                                     <div className="me-2">
+                                                                         <div className={`avatar avatar-xs avatar-rounded bg-soft-${avtBg} text-${avtBg} d-flex align-items-center justify-content-center fw-bold`} style={{ width: '32px', height: '32px', fontSize: '11px', borderRadius: '50%' }}>
+                                                                             {initials}
+                                                                         </div>
+                                                                     </div>
+                                                                     <div>
+                                                                         <div className="fw-semibold text-dark text-high-em" style={{ fontSize: '13px' }}>{fullName || 'Cliente Anónimo'}</div>
+                                                                         {order.contacto_telefono && <span className="text-muted d-block" style={{ fontSize: '11px' }}>📱 {order.contacto_telefono}</span>}
+                                                                     </div>
+                                                                 </div>
+                                                             </td>
+                                                         )}
+                                                         {listSettings.requestDate && (
+                                                             <td>
+                                                                 <span className="small text-muted">{formatDate(order.created_at || order.fecha_registro || order.fecha_venta)}</span>
+                                                             </td>
+                                                         )}
+                                                         {listSettings.date && (
+                                                             <td>
+                                                                 <div className="d-flex align-items-center gap-1">
+                                                                     <span className="text-dark fw-semibold" style={{ fontSize: '13px' }}>
+                                                                         {formatDate(order.fecha_entrega)}
+                                                                     </span>
+                                                                     {order.hora_entrega && (
+                                                                         <Badge bg="light" className="text-muted border" style={{ fontSize: '10px' }}>
+                                                                             {formatTime(order.hora_entrega)}
+                                                                         </Badge>
+                                                                     )}
+                                                                 </div>
+                                                             </td>
+                                                         )}
+                                                         {listSettings.zone && (
+                                                             <td>
+                                                                 <Badge bg="light" className="text-dark border" style={{ fontSize: '11px' }}>{order.zona_nombre || 'N/A'}</Badge>
+                                                             </td>
+                                                         )}
+                                                         {listSettings.products && (
+                                                             <td style={{ maxWidth: '200px' }}>
+                                                                 <span className="text-muted small text-wrap d-block text-truncate" style={{ fontSize: '12px', lineHeight: '1.4' }} title={order.productos_resumen}>
+                                                                     {order.productos_resumen || 'Sin detalle'}
+                                                                 </span>
+                                                             </td>
+                                                         )}
+                                                         {listSettings.stage && (
+                                                             <td>
+                                                                 <Badge bg="" className="bg-soft-info text-info border border-info-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>
+                                                                     {colName}
+                                                                 </Badge>
+                                                             </td>
+                                                         )}
+                                                         {listSettings.total && (
+                                                             <td>
+                                                                 <span className="fw-bold text-primary">S/ {parseFloat(order.total || 0).toFixed(2)}</span>
+                                                             </td>
+                                                         )}
+                                                         <td>
+                                                             <Badge 
+                                                                 bg="" 
+                                                                 className={order.estado_pago === 'Pagado' ? 'bg-soft-success text-success border border-success-soft rounded-pill' : 'bg-soft-danger text-danger border border-danger-soft rounded-pill'} 
+                                                                 style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}
+                                                             >
+                                                                 {order.estado_pago === 'Pagado' ? '● Pagado' : '○ Pendiente'}
+                                                             </Badge>
+                                                         </td>
+                                                         {listSettings.actions && (
+                                                             <td className="text-end pe-3">
+                                                                 <div className="d-inline-flex gap-1">
+                                                                     <Button 
+                                                                         variant="flush-dark" 
+                                                                         className="btn-icon btn-rounded flush-soft-hover" 
+                                                                         title="Enviar WhatsApp"
+                                                                         onClick={() => shareOrderWhatsapp(order)}
+                                                                         style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
+                                                                     >
+                                                                         <Send size={14} className="text-success" />
+                                                                     </Button>
+                                                                     <Button 
+                                                                         variant="flush-dark" 
+                                                                         as="a"
+                                                                         href={`/pedidos/create?edit_id=${order.id}`}
+                                                                         className="btn-icon btn-rounded flush-soft-hover" 
+                                                                         title="Editar"
+                                                                         style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
+                                                                     >
+                                                                         <Edit size={14} className="text-primary" />
+                                                                     </Button>
+                                                                     <Button 
+                                                                         variant="flush-dark" 
+                                                                         className="btn-icon btn-rounded flush-soft-hover text-danger" 
+                                                                         title="Eliminar"
+                                                                         onClick={() => deleteOrder(order.id)}
+                                                                         style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
+                                                                     >
+                                                                         <Trash size={14} />
+                                                                     </Button>
+                                                                 </div>
+                                                             </td>
+                                                         )}
+                                                     </tr>
+                                                 );
+                                             })}
+                                             {currentFiltered.length === 0 && (
+                                                 <tr>
+                                                     <td colSpan={10} className="text-center py-4 text-muted">No se encontraron pedidos.</td>
+                                                 </tr>
+                                             )}
+                                         </tbody>
+                                     </Table>
+                                 </Card>
+                             )}
 
                             {/* MAP & ROUTING VIEW */}
                             {viewMode === 'map' && (

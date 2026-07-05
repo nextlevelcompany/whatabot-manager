@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     empresa_id           BIGINT       REFERENCES contacts(id) ON DELETE SET NULL,
     starred              BOOLEAN      DEFAULT FALSE,
     ai_active            BOOLEAN      DEFAULT FALSE,
+    status               VARCHAR(50)  DEFAULT 'Lead',
     date_created         TIMESTAMP    DEFAULT NOW()
 );
 
@@ -243,7 +244,26 @@ CREATE TABLE IF NOT EXISTS conductores (
     id SERIAL PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     apellido VARCHAR(100),
+    foto VARCHAR(250),
+    dni VARCHAR(20),
+    telefono VARCHAR(20),
+    licencia VARCHAR(50),
     vehiculo_placa VARCHAR(20),
+    vehiculo_marca VARCHAR(100),
+    vehiculo_modelo VARCHAR(100),
+    vehiculo_anho VARCHAR(10),
+    tipo_combustible VARCHAR(50),
+    vehiculo_tipo VARCHAR(50),
+    capacidad_toneladas NUMERIC(10,2),
+    fecha_mantenimiento_motor DATE,
+    fecha_mantenimiento_gas DATE,
+    departamento VARCHAR(100),
+    provincia VARCHAR(100),
+    distrito VARCHAR(100),
+    direccion VARCHAR(250),
+    latitud DOUBLE PRECISION,
+    longitud DOUBLE PRECISION,
+    notas TEXT,
     activo BOOLEAN DEFAULT TRUE
 );
 
@@ -352,5 +372,337 @@ WHERE NOT EXISTS (SELECT 1 FROM etapas_pedido WHERE nombre = 'Reprogramado');
 INSERT INTO etapas_pedido (nombre, orden, es_entregado, label_ganado, es_perdido, label_perdido)
 SELECT 'Cancelado', 5, 0, NULL, 1, 'CANCELADO'
 WHERE NOT EXISTS (SELECT 1 FROM etapas_pedido WHERE nombre = 'Cancelado');
+
+
+-- ============================================================
+-- FASE 2: GASTOS, COMPRAS Y PROVEEDORES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS proveedores (
+    id BIGSERIAL PRIMARY KEY,
+    ruc VARCHAR(20) UNIQUE,
+    razon_social VARCHAR(250) NOT NULL,
+    contacto_nombre VARCHAR(150),
+    telefono VARCHAR(20),
+    email VARCHAR(100),
+    direccion VARCHAR(250),
+    activo BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS gastos_categorias (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) UNIQUE NOT NULL,
+    tipo VARCHAR(50) DEFAULT 'Operativo',
+    grupo_contable VARCHAR(100) DEFAULT 'Otros Gastos',
+    afecta_margen_bidon BOOLEAN DEFAULT FALSE,
+    afecta_cac BOOLEAN DEFAULT FALSE,
+    activo BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS gastos (
+    id BIGSERIAL PRIMARY KEY,
+    proveedor_id BIGINT REFERENCES proveedores(id) ON DELETE SET NULL,
+    categoria_id INT REFERENCES gastos_categorias(id) ON DELETE SET NULL,
+    vehiculo_id INT REFERENCES conductores(id) ON DELETE SET NULL,
+    fecha_gasto DATE NOT NULL,
+    numero_comprobante VARCHAR(50),
+    tipo_comprobante VARCHAR(50) DEFAULT 'Ninguno',
+    descripcion TEXT,
+    cantidad NUMERIC(10,2) DEFAULT 1.00,
+    costo_unitario NUMERIC(12,2) DEFAULT 0.00,
+    monto_total NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    estado_pago VARCHAR(50) DEFAULT 'Pagado',
+    metodo_pago VARCHAR(50),
+    archivo_comprobante VARCHAR(250),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS compras (
+    id BIGSERIAL PRIMARY KEY,
+    proveedor_id BIGINT REFERENCES proveedores(id) ON DELETE SET NULL,
+    usuario_id INT REFERENCES users(id) ON DELETE SET NULL,
+    numero_compra VARCHAR(50) UNIQUE,
+    fecha_compra DATE NOT NULL,
+    tipo_comprobante VARCHAR(50) DEFAULT 'Factura',
+    numero_comprobante VARCHAR(50),
+    subtotal NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    igv NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    total NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    estado VARCHAR(50) DEFAULT 'pendiente',
+    notas TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS compras_detalles (
+    id BIGSERIAL PRIMARY KEY,
+    compra_id BIGINT REFERENCES compras(id) ON DELETE CASCADE,
+    producto_id INT REFERENCES productos(id) ON DELETE SET NULL,
+    cantidad NUMERIC(10,2) NOT NULL,
+    costo_unitario NUMERIC(12,2) NOT NULL,
+    subtotal NUMERIC(12,2) NOT NULL
+);
+
+-- Seed de Categorías de Gastos
+INSERT INTO gastos_categorias (nombre, tipo, grupo_contable, afecta_margen_bidon, afecta_cac) VALUES
+('Compra de Inventario', 'Variable', 'Compras', true, false),
+('Carga Financiera (Bancos)', 'Fijo', 'Financiero', false, false),
+('Combustible', 'Variable', 'Logística', true, false),
+('Mantenimiento de Vehículo', 'Variable', 'Logística', true, false),
+('Publicidad y Marketing', 'Variable', 'Comercial', false, true),
+('Servicios Básicos (Luz/Agua/Internet)', 'Fijo', 'Servicios', false, false),
+('Sueldos y Planilla', 'Fijo', 'RRHH', false, false),
+('Otros Gastos', 'Variable', 'Otros', false, false)
+ON CONFLICT (nombre) DO NOTHING;
+
+
+-- ============================================================
+-- FASE 3: TESORERÍA, CAJA Y DEUDAS BANCARIAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS caja_movimientos (
+    id BIGSERIAL PRIMARY KEY,
+    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('Ingreso', 'Egreso')),
+    categoria VARCHAR(100) NOT NULL,
+    monto NUMERIC(12, 2) NOT NULL,
+    metodo_pago VARCHAR(50) NOT NULL,
+    referencia_id BIGINT,
+    tabla_referencia VARCHAR(100),
+    notas TEXT,
+    archivo_comprobante VARCHAR(250),
+    usuario_id INT REFERENCES users(id) ON DELETE SET NULL,
+    fecha TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS deudas_bancarias (
+    id BIGSERIAL PRIMARY KEY,
+    entidad_bancaria VARCHAR(150) NOT NULL,
+    numero_prestamo VARCHAR(100),
+    monto_prestado NUMERIC(12, 2) NOT NULL,
+    moneda VARCHAR(10) DEFAULT 'PEN',
+    fecha_inicio DATE NOT NULL,
+    cuotas_totales INT NOT NULL,
+    tcea NUMERIC(5, 2) DEFAULT 0.00,
+    estado VARCHAR(20) DEFAULT 'Activa' CHECK (estado IN ('Activa', 'Liquidada')),
+    notas TEXT
+);
+
+CREATE TABLE IF NOT EXISTS deudas_cuotas (
+    id BIGSERIAL PRIMARY KEY,
+    deuda_id BIGINT REFERENCES deudas_bancarias(id) ON DELETE CASCADE,
+    numero_cuota INT NOT NULL,
+    fecha_vencimiento DATE NOT NULL,
+    monto_cuota NUMERIC(12, 2) NOT NULL,
+    capital NUMERIC(12, 2) NOT NULL,
+    interes NUMERIC(12, 2) DEFAULT 0.00,
+    seguro_comisiones NUMERIC(12, 2) DEFAULT 0.00,
+    estado VARCHAR(20) DEFAULT 'Pendiente' CHECK (estado IN ('Pendiente', 'Pagado')),
+    gasto_id BIGINT REFERENCES gastos(id) ON DELETE SET NULL,
+    fecha_pago TIMESTAMP
+);
+
+-- ============================================================
+-- FASE 4: RECURSOS HUMANOS (PERSONAL, ASISTENCIA Y NOMINAS)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS afp_maestra (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) UNIQUE NOT NULL,
+    comision_flujo NUMERIC(6, 4) NOT NULL DEFAULT 0.0000,
+    comision_mixta NUMERIC(6, 4) NOT NULL DEFAULT 0.0000,
+    prima_seguro NUMERIC(6, 4) NOT NULL DEFAULT 0.0000,
+    aporte_obligatorio NUMERIC(6, 4) NOT NULL DEFAULT 0.0000,
+    activo BOOLEAN DEFAULT TRUE
+);
+
+INSERT INTO afp_maestra (nombre, comision_flujo, comision_mixta, prima_seguro, aporte_obligatorio, activo) VALUES
+('Integra', 0.0155, 0.0082, 0.0184, 0.1000, true),
+('Prima', 0.0160, 0.0087, 0.0184, 0.1000, true),
+('Profuturo', 0.0169, 0.0107, 0.0184, 0.1000, true),
+('Habitat', 0.0147, 0.0038, 0.0184, 0.1000, true)
+ON CONFLICT (nombre) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS trabajadores (
+    id BIGSERIAL PRIMARY KEY,
+    usuario_id INT REFERENCES users(id) ON DELETE SET NULL,
+    nombre VARCHAR(100) NOT NULL,
+    apellido VARCHAR(100) NOT NULL,
+    dni VARCHAR(20) UNIQUE NOT NULL,
+    telefono VARCHAR(50),
+    rol_operativo VARCHAR(50) NOT NULL,
+    sueldo_base NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    frecuencia_pago VARCHAR(50) DEFAULT 'Mensual',
+    monto_tardanza NUMERIC(12, 2) DEFAULT 0.00,
+    tiene_hijos BOOLEAN DEFAULT FALSE,
+    paga_ley BOOLEAN DEFAULT TRUE,
+    regimen_pension VARCHAR(20) DEFAULT 'ONP',
+    afp_id INT REFERENCES afp_maestra(id) ON DELETE SET NULL,
+    tipo_comision_afp VARCHAR(20) DEFAULT 'Flujo',
+    paga_comision BOOLEAN DEFAULT FALSE,
+    monto_comision_bidon NUMERIC(10, 2) DEFAULT 0.00,
+    vehiculo_placa VARCHAR(20),
+    vehiculo_marca VARCHAR(50),
+    vehiculo_modelo VARCHAR(50),
+    vehiculo_capacidad NUMERIC(10, 2) DEFAULT 0.00,
+    linea_movil VARCHAR(50),
+    cuenta_bancaria VARCHAR(100),
+    banco_nombre VARCHAR(100),
+    estado VARCHAR(20) DEFAULT 'Activo',
+    fecha_ingreso DATE
+);
+
+CREATE TABLE IF NOT EXISTS pagos_nominas (
+    id BIGSERIAL PRIMARY KEY,
+    trabajador_id BIGINT NOT NULL REFERENCES trabajadores(id) ON DELETE CASCADE,
+    gasto_id BIGINT REFERENCES gastos(id) ON DELETE SET NULL,
+    periodo_inicio DATE NOT NULL,
+    periodo_fin DATE NOT NULL,
+    frecuencia VARCHAR(50) NOT NULL,
+    monto_base NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    monto_comisiones NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    monto_descuentos NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    monto_adelantos NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    monto_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    estado VARCHAR(50) DEFAULT 'Pendiente',
+    metadata TEXT
+);
+
+CREATE TABLE IF NOT EXISTS asistencia (
+    id BIGSERIAL PRIMARY KEY,
+    trabajador_id BIGINT NOT NULL REFERENCES trabajadores(id) ON DELETE CASCADE,
+    fecha DATE NOT NULL,
+    hora_entrada VARCHAR(20),
+    hora_salida VARCHAR(20),
+    estado VARCHAR(20) NOT NULL CHECK (estado IN ('Presente', 'Falta', 'Tardanza', 'Permiso', 'Vacaciones')),
+    notas TEXT,
+    pago_id BIGINT REFERENCES pagos_nominas(id) ON DELETE SET NULL,
+    UNIQUE (trabajador_id, fecha)
+);
+
+CREATE TABLE IF NOT EXISTS adelantos (
+    id BIGSERIAL PRIMARY KEY,
+    trabajador_id BIGINT NOT NULL REFERENCES trabajadores(id) ON DELETE CASCADE,
+    gasto_id BIGINT REFERENCES gastos(id) ON DELETE SET NULL,
+    fecha DATE NOT NULL,
+    monto NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    notas TEXT,
+    estado VARCHAR(50) DEFAULT 'Pendiente' CHECK (estado IN ('Pendiente', 'Descontado', 'Anulado'))
+);
+
+-- Seed de Categoría de Gasto para Planilla
+INSERT INTO gastos_categorias (nombre, tipo, grupo_contable, afecta_margen_bidon, afecta_cac) VALUES
+('Planilla de Personal', 'Fijo', 'RRHH', false, false)
+ON CONFLICT (nombre) DO NOTHING;
+
+
+-- ============================================================
+-- FASE 5: CRM LEADS & OPPORTUNITIES (KANBAN)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS kanban_columnas (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    orden INT NOT NULL,
+    es_ganada BOOLEAN DEFAULT FALSE,
+    label_ganada VARCHAR(100) DEFAULT 'Ganada',
+    es_perdida BOOLEAN DEFAULT FALSE,
+    label_perdida VARCHAR(100) DEFAULT 'Perdida'
+);
+
+INSERT INTO kanban_columnas (nombre, orden, es_ganada, es_perdida) VALUES
+('Prospecto', 1, false, false),
+('Contacto Establecido', 2, false, false),
+('Propuesta Presentada', 3, false, false),
+('En Negociación', 4, false, false),
+('Ganada', 5, true, false),
+('Perdida', 6, false, true)
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS kanban_etiquetas (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) UNIQUE NOT NULL,
+    color VARCHAR(50) DEFAULT '#6366f1'
+);
+
+INSERT INTO kanban_etiquetas (nombre, color) VALUES
+('Agua de Mesa', '#3b82f6'),
+('Servicio Técnico', '#ef4444'),
+('Bidón 20L', '#10b981'),
+('Pack Dispensador', '#f59e0b')
+ON CONFLICT (nombre) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS oportunidades (
+    id BIGSERIAL PRIMARY KEY,
+    titulo VARCHAR(250) NOT NULL,
+    contacto_id BIGINT REFERENCES contacts(id) ON DELETE SET NULL,
+    etapa_id INT REFERENCES kanban_columnas(id) ON DELETE SET NULL,
+    valor NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    prioridad VARCHAR(50) DEFAULT 'Media',
+    etiquetas VARCHAR(500),
+    usuario_id INT REFERENCES users(id) ON DELETE SET NULL,
+    orden INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+-- FASE 5 PART 2: VENTAS, RENTABILIDAD & ENVASES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ventas (
+    id BIGSERIAL PRIMARY KEY,
+    numero_venta VARCHAR(50) UNIQUE,
+    contacto_id BIGINT REFERENCES contacts(id) ON DELETE SET NULL,
+    fecha_venta TIMESTAMP NOT NULL DEFAULT NOW(),
+    estado VARCHAR(50) DEFAULT 'pendiente', -- 'pendiente', 'completada', 'cancelada'
+    metodo_pago VARCHAR(50),
+    estado_pago VARCHAR(50) DEFAULT 'pendiente', -- 'pendiente', 'parcial', 'pagado'
+    subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    igv NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    monto_pagado NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    bidones_entregados INT DEFAULT 0,
+    bidones_recogidos INT DEFAULT 0,
+    notas TEXT,
+    usuario_id INT REFERENCES users(id) ON DELETE SET NULL,
+    tipo_comprobante VARCHAR(50) DEFAULT 'nota_venta',
+    direccion_entrega VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS venta_detalles (
+    id BIGSERIAL PRIMARY KEY,
+    venta_id BIGINT NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
+    producto_id INT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+    cantidad INT NOT NULL DEFAULT 1,
+    precio_unitario NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0.00
+);
+
+CREATE TABLE IF NOT EXISTS movimientos_envases (
+    id BIGSERIAL PRIMARY KEY,
+    contacto_id BIGINT REFERENCES contacts(id) ON DELETE CASCADE,
+    tipo VARCHAR(50) NOT NULL, -- 'Entrega', 'Recojo', 'Ajuste'
+    cantidad INT NOT NULL,
+    saldo_anterior INT NOT NULL,
+    saldo_posterior INT NOT NULL,
+    usuario_id INT REFERENCES users(id) ON DELETE SET NULL,
+    venta_id BIGINT REFERENCES ventas(id) ON DELETE SET NULL,
+    pedido_id BIGINT REFERENCES pedidos(id) ON DELETE SET NULL,
+    notas TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS producto_composicion (
+    id SERIAL PRIMARY KEY,
+    producto_padre_id INT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+    producto_hijo_id INT NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+    cantidad INT NOT NULL DEFAULT 1,
+    UNIQUE (producto_padre_id, producto_hijo_id)
+);
+
+-- Schema alignment updates (fixes database drifts)
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Lead';
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bidones_prestados INT DEFAULT 0;
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0.00;
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS igv NUMERIC(12, 2) NOT NULL DEFAULT 0.00;
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS direccion_entrega VARCHAR(255);
 
 

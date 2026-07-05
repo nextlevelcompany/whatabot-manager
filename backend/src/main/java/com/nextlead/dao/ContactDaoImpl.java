@@ -52,6 +52,7 @@ public class ContactDaoImpl implements ContactDao {
         c.setStarred(rs.getBoolean("starred"));
         c.setAiActive(rs.getBoolean("ai_active"));
         c.setReferencia(rs.getString("referencia"));
+        c.setStatus(rs.getString("status"));
         Timestamp ts = rs.getTimestamp("date_created");
         if (ts != null) c.setDateCreated(ts.toLocalDateTime());
         return c;
@@ -131,8 +132,8 @@ public class ContactDaoImpl implements ContactDao {
         String sql = """
             INSERT INTO contacts
               (tipo_persona, tipo_documento, numero_documento, nombres, apellidos,
-               razon_social, telefono_principal, telefono_secundario, email, empresa_id, starred, ai_active, referencia)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               razon_social, telefono_principal, telefono_secundario, email, empresa_id, starred, ai_active, referencia, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
@@ -154,6 +155,7 @@ public class ContactDaoImpl implements ContactDao {
             ps.setBoolean(11, contact.getStarred() != null ? contact.getStarred() : false);
             ps.setBoolean(12, contact.getAiActive() != null ? contact.getAiActive() : false);
             ps.setString(13, contact.getReferencia());
+            ps.setString(14, contact.getStatus() != null ? contact.getStatus() : "Lead");
             return ps;
         }, keyHolder);
 
@@ -195,7 +197,7 @@ public class ContactDaoImpl implements ContactDao {
         String sql = """
             UPDATE contacts SET
               tipo_persona = ?, tipo_documento = ?, numero_documento = ?, nombres = ?, apellidos = ?,
-              razon_social = ?, telefono_principal = ?, telefono_secundario = ?, email = ?, empresa_id = ?, ai_active = ?, referencia = ?
+              razon_social = ?, telefono_principal = ?, telefono_secundario = ?, email = ?, empresa_id = ?, ai_active = ?, referencia = ?, status = ?
             WHERE id = ?
             """;
         jdbcTemplate.update(sql,
@@ -211,6 +213,7 @@ public class ContactDaoImpl implements ContactDao {
             contact.getEmpresaId(),
             contact.getAiActive(),
             contact.getReferencia(),
+            contact.getStatus() != null ? contact.getStatus() : "Lead",
             contact.getId()
         );
 

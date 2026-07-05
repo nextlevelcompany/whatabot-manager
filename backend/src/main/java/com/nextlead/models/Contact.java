@@ -26,6 +26,7 @@ public class Contact {
     private Boolean aiActive = false;
     private LocalDateTime dateCreated;
     private String referencia;
+    private String status = "Lead";
     // Relación 1-N con direcciones
     private List<Direccion> direcciones = new ArrayList<>();
 
@@ -89,4 +90,7 @@ public class Contact {
 
     public Boolean getAiActive() { return aiActive != null ? aiActive : false; }
     public void setAiActive(Boolean aiActive) { this.aiActive = aiActive; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 }

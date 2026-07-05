@@ -18,10 +18,12 @@ import java.util.Optional;
 public class ContactController {
 
     private final ContactDao contactDao;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Autowired
-    public ContactController(ContactDao contactDao) {
+    public ContactController(ContactDao contactDao, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.contactDao = contactDao;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     // GET /api/contacts — Todos los contactos
@@ -48,6 +50,29 @@ public class ContactController {
     @GetMapping("/{id}/addresses")
     public ResponseEntity<List<Direccion>> getAddresses(@PathVariable Long id) {
         return ResponseEntity.ok(contactDao.findAddressesByContactId(id));
+    }
+
+    // GET /api/contacts/{id}/pedidos — Pedidos y ventas del contacto
+    @GetMapping("/{id}/pedidos")
+    public ResponseEntity<?> getPedidosAndVentasByContactId(@PathVariable Long id) {
+        try {
+            String sql = 
+                "SELECT 'pedido' as tipo, p.id, p.numero_pedido as numero, p.created_at as fecha, " +
+                "       p.total, p.estado_pago, ep.nombre as estado_entrega, p.direccion_entrega " +
+                "FROM pedidos p " +
+                "LEFT JOIN etapas_pedido ep ON p.etapa_id = ep.id " +
+                "WHERE p.contacto_id = ? AND p.venta_id IS NULL " +
+                "UNION ALL " +
+                "SELECT 'venta' as tipo, v.id, v.numero_venta as numero, v.fecha_venta as fecha, " +
+                "       v.total, v.estado_pago, v.estado as estado_entrega, v.direccion_entrega " +
+                "FROM ventas v " +
+                "WHERE v.contacto_id = ? " +
+                "ORDER BY fecha DESC";
+            return ResponseEntity.ok(jdbcTemplate.queryForList(sql, id, id));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(java.util.Map.of("message", "Error al obtener historial: " + e.getMessage()));
+        }
     }
 
     // GET /api/contacts/{id}/personas — Personas vinculadas a una empresa

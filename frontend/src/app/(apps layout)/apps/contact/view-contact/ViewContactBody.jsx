@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Row, Col, Card, Badge, Spinner, Alert, Button, Form, Modal, Nav } from 'react-bootstrap';
+import { Row, Col, Card, Badge, Spinner, Alert, Button, Form, Modal, Nav, Table } from 'react-bootstrap';
 import { Mail, Phone, Calendar, Hash, Edit, Check, X, Plus, Trash, Eye, Search, MapPin, Link as LinkIcon } from 'react-feather';
 import Link from 'next/link';
 import InteractiveMap from '../InteractiveMap';
@@ -15,8 +15,10 @@ const ViewContactBody = ({ setContactName }) => {
     const [contact, setContact] = useState(null);
     const [direcciones, setDirecciones] = useState([]);
     const [linkedPersonas, setLinkedPersonas] = useState([]);
+    const [pedidos, setPedidos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingPersonas, setLoadingPersonas] = useState(false);
+    const [loadingPedidos, setLoadingPedidos] = useState(false);
     const [selectedDir, setSelectedDir] = useState(null);
     const [error, setError] = useState(null);
 
@@ -442,6 +444,20 @@ const ViewContactBody = ({ setContactName }) => {
                     const aData = await rAddresses.json();
                     setDirecciones(aData);
                     if (aData.length > 0) setSelectedDir(aData[0]);
+                }
+
+                // Cargar pedidos y ventas
+                setLoadingPedidos(true);
+                try {
+                    const rPedidos = await fetch(`${API_BASE}/api/contacts/${id}/pedidos`);
+                    if (rPedidos.ok) {
+                        const pData = await rPedidos.json();
+                        setPedidos(Array.isArray(pData) ? pData : []);
+                    }
+                } catch (e) {
+                    console.error("Error loading pedidos/ventas", e);
+                } finally {
+                    setLoadingPedidos(false);
                 }
 
                 // Cargar vinculados si es empresa
@@ -1383,8 +1399,82 @@ const ViewContactBody = ({ setContactName }) => {
                         </Card>
                     )}
 
-                    {/* Pedidos, Oportunidades, Envases placeholder content */}
-                    {(activeTab === 'Pedidos' || activeTab === 'Oportunidades' || activeTab === 'Envases') && (
+                    {/* Pedidos and Sales Tab */}
+                    {activeTab === 'Pedidos' && (
+                        <Card className="border rounded shadow-sm mb-4 bg-white overflow-hidden">
+                            {loadingPedidos ? (
+                                <div className="text-center py-5">
+                                    <Spinner animation="border" variant="primary" />
+                                </div>
+                            ) : pedidos.length > 0 ? (
+                                <div className="table-responsive">
+                                    <Table hover className="align-middle mb-0 text-nowrap">
+                                        <thead className="table-light text-muted font-size-12">
+                                            <tr>
+                                                <th className="ps-3">Tipo</th>
+                                                <th>Nº Registro</th>
+                                                <th>Fecha</th>
+                                                <th>Dirección</th>
+                                                <th>Total</th>
+                                                <th>Estado Pago</th>
+                                                <th>Estado Entrega</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="font-size-13">
+                                            {pedidos.map((row, idx) => {
+                                                const isVenta = row.tipo === 'venta';
+                                                const typeBadge = isVenta 
+                                                    ? <Badge bg="success-soft text-success">VENTA DIRECTA</Badge>
+                                                    : <Badge bg="primary-soft text-primary">PEDIDO RUTA</Badge>;
+                                                
+                                                const dateStr = row.fecha ? new Date(row.fecha).toLocaleDateString('es-PE', {
+                                                    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                                }) : '—';
+
+                                                const estadoPagoBadge = row.estado_pago === 'pagado' || row.estado_pago === 'Pagado'
+                                                    ? <Badge bg="success">Pagado</Badge>
+                                                    : (row.estado_pago === 'parcial' || row.estado_pago === 'Parcial'
+                                                        ? <Badge bg="warning text-dark">Parcial</Badge>
+                                                        : <Badge bg="danger">Pendiente</Badge>);
+
+                                                const getEntregaBadge = (est) => {
+                                                    const clean = String(est || '').toLowerCase();
+                                                    if (clean === 'completada' || clean === 'entregado') return <Badge bg="success-soft text-success">Entregado</Badge>;
+                                                    if (clean === 'cancelada' || clean === 'anulada') return <Badge bg="danger-soft text-danger">Anulado</Badge>;
+                                                    return <Badge bg="warning-soft text-warning-dark">Pendiente</Badge>;
+                                                };
+
+                                                return (
+                                                    <tr key={idx}>
+                                                        <td className="ps-3">{typeBadge}</td>
+                                                        <td>
+                                                            <strong className="text-dark">{row.numero}</strong>
+                                                        </td>
+                                                        <td className="text-muted">{dateStr}</td>
+                                                        <td className="text-truncate" style={{ maxWidth: '200px' }} title={row.direccion_entrega}>
+                                                            {row.direccion_entrega || '—'}
+                                                        </td>
+                                                        <td>
+                                                            <strong className="text-dark">S/ {parseFloat(row.total || 0).toFixed(2)}</strong>
+                                                        </td>
+                                                        <td>{estadoPagoBadge}</td>
+                                                        <td>{getEntregaBadge(row.estado_entrega)}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </Table>
+                                </div>
+                            ) : (
+                                <div className="text-center py-5 text-muted" style={{ fontSize: '0.85rem' }}>
+                                    No se registran pedidos ni ventas para este contacto.
+                                </div>
+                            )}
+                        </Card>
+                    )}
+
+                    {/* Oportunidades, Envases placeholder content */}
+                    {(activeTab === 'Oportunidades' || activeTab === 'Envases') && (
                         <Card className="border rounded shadow-sm p-4 mb-4">
                             <div className="text-center py-4 text-muted" style={{ fontSize: '0.85rem' }}>
                                 No se registran {activeTab.toLowerCase()} para este contacto.

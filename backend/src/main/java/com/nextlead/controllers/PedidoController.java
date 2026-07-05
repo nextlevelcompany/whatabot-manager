@@ -38,9 +38,14 @@ public class PedidoController {
                     "SELECT id, nombre, activo FROM zonas WHERE activo = true ORDER BY nombre ASC"
             );
 
-            // Drivers
+            // Drivers (filtered strictly to include only registered workers with Repartidor/driver profile)
             List<Map<String, Object>> drivers = jdbcTemplate.queryForList(
-                    "SELECT id, nombre, apellido, vehiculo_placa FROM conductores WHERE activo = true ORDER BY nombre ASC"
+                    "SELECT c.id, c.nombre, c.apellido, c.vehiculo_placa " +
+                    "FROM conductores c " +
+                    "INNER JOIN trabajadores t ON c.dni = t.dni " +
+                    "WHERE c.activo = true " +
+                    "  AND t.rol_operativo = 'Repartidor' " +
+                    "ORDER BY c.nombre ASC"
             );
 
             // Categories
@@ -261,28 +266,99 @@ public class PedidoController {
             int esPerdido = ((Number) stage.get("es_perdido")).intValue();
 
             if (esEntregado == 1) {
-                // Confirm and close order
-                jdbcTemplate.update(
-                        "UPDATE pedidos SET " +
-                        "  etapa_id = ?, " +
-                        "  quien_recibio = ?, " +
-                        "  envases_entregados = ?, " +
-                        "  envases_devueltos = ?, " +
-                        "  monto_final = ?, " +
-                        "  metodo_pago_real = ?, " +
-                        "  estado_pago = ?, " +
-                        "  venta_estado = 'completada', " +
-                        "  fecha_entrega = CURRENT_DATE " +
-                        "WHERE id = ?",
-                        req.etapa_id,
-                        req.quien_recibio,
-                        req.envases_entregados != null ? req.envases_entregados : 0,
-                        req.envases_devueltos != null ? req.envases_devueltos : 0,
-                        req.monto_final != null ? req.monto_final : 0.0,
-                        req.metodo_pago_real,
-                        req.pendiente_pago == 1 ? "Pendiente" : "Pagado",
-                        req.pedido_id
+                // CIERRE DE PEDIDO (ENTREGA)
+                // Check if venta_id is already registered
+                Map<String, Object> currentPedido = jdbcTemplate.queryForMap(
+                        "SELECT venta_id, contacto_id, total, direccion_entrega, notas, numero_pedido, metodo_pago FROM pedidos WHERE id = ?", req.pedido_id
                 );
+                Object existingVentaId = currentPedido.get("venta_id");
+
+                if (existingVentaId == null) {
+                    int entregados = req.envases_entregados != null ? req.envases_entregados : 0;
+                    int devueltos = req.envases_devueltos != null ? req.envases_devueltos : 0;
+
+                    // Generate sale number: V- + 6 random characters
+                    String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < 6; i++) {
+                        sb.append(chars.charAt(this.random.nextInt(chars.length())));
+                    }
+                    String numeroVenta = "V-" + sb.toString();
+
+                    int defaultUserId = 1; // Default admin user ID
+                    String quienRecibio = req.quien_recibio != null ? req.quien_recibio : "";
+                    double total = req.monto_final != null ? req.monto_final : ((Number) currentPedido.get("total")).doubleValue();
+                    String metodoPago = (req.metodo_pago_real != null && !req.metodo_pago_real.trim().isEmpty())
+                            ? req.metodo_pago_real
+                            : (currentPedido.get("metodo_pago") != null ? (String) currentPedido.get("metodo_pago") : "efectivo");
+                    int pendientePago = req.pendiente_pago != null ? req.pendiente_pago : 0;
+                    String estadoPagoFinal = (pendientePago == 1) ? "pendiente" : "pagado";
+                    String notasCierre = "Recibido por: " + quienRecibio + " | Origen: Logística. " + (currentPedido.get("notas") != null ? currentPedido.get("notas") : "");
+
+                    double stFinal = total / 1.18; // 18% IGV
+                    double igvFinal = total - stFinal;
+                    double montoPagadoFinal = (pendientePago == 1) ? 0.0 : total;
+
+                    // Update contact status to 'Cliente'
+                    jdbcTemplate.update("UPDATE contacts SET status = 'Cliente' WHERE id = ?", currentPedido.get("contacto_id"));
+
+                    // Insert sale record with status 'completada' instead of 'pendiente'!
+                    // This is the bug fix: "lo pendiente debe ser el pago", so the sale itself is completed (completada)!
+                    jdbcTemplate.update(
+                            "INSERT INTO ventas (contacto_id, usuario_id, numero_venta, fecha_venta, tipo_comprobante, subtotal, igv, total, monto_pagado, estado, estado_pago, metodo_pago, bidones_entregados, bidones_recogidos, notas, direccion_entrega) " +
+                            "VALUES (?, ?, ?, NOW(), 'nota_venta', ?, ?, ?, ?, 'completada', ?, ?, ?, ?, ?, ?)",
+                            currentPedido.get("contacto_id"), defaultUserId, numeroVenta, stFinal, igvFinal, total, montoPagadoFinal, estadoPagoFinal, metodoPago, entregados, devueltos, notasCierre, currentPedido.get("direccion_entrega")
+                    );
+
+                    Long newVentaId = jdbcTemplate.queryForObject("SELECT lastval()", Long.class);
+
+                    // Track bottle balances
+                    int impact = entregados - devueltos;
+                    Integer prevBalance = jdbcTemplate.queryForObject("SELECT COALESCE(bidones_prestados, 0) FROM contacts WHERE id = ?", Integer.class, currentPedido.get("contacto_id"));
+                    if (prevBalance == null) prevBalance = 0;
+
+                    // Sincronizar saldo de bidones del cliente
+                    jdbcTemplate.update("UPDATE contacts SET bidones_prestados = COALESCE(bidones_prestados, 0) + ? WHERE id = ?", impact, currentPedido.get("contacto_id"));
+
+                    // Log bottle movement
+                    String sqlLog = "INSERT INTO movimientos_envases (contacto_id, tipo, cantidad, saldo_anterior, saldo_posterior, usuario_id, venta_id, pedido_id, notas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    if (entregados > 0) {
+                        jdbcTemplate.update(sqlLog, currentPedido.get("contacto_id"), "Entrega", entregados, prevBalance, prevBalance + entregados, defaultUserId, newVentaId, req.pedido_id, "Entrega desde Logística (Venta #" + newVentaId + ")");
+                        prevBalance += entregados;
+                    }
+                    if (devueltos > 0) {
+                        jdbcTemplate.update(sqlLog, currentPedido.get("contacto_id"), "Recojo", devueltos, prevBalance, prevBalance - devueltos, defaultUserId, newVentaId, req.pedido_id, "Recojo desde Logística (Venta #" + newVentaId + ")");
+                    }
+
+                    // Log finance movement if paid
+                    if ("pagado".equals(estadoPagoFinal)) {
+                        jdbcTemplate.update(
+                                "INSERT INTO caja_movimientos (tipo, categoria, monto, metodo_pago, referencia_id, tabla_referencia, fecha, notas, usuario_id) " +
+                                "VALUES ('Ingreso', 'Venta', ?, ?, ?, 'ventas', NOW(), ?, ?)",
+                                total, metodoPago, newVentaId, "Venta automática desde Pedido #" + req.pedido_id, defaultUserId
+                        );
+                    }
+
+                    // Copy items to venta_detalles
+                    List<Map<String, Object>> items = jdbcTemplate.queryForList("SELECT * FROM pedido_detalles WHERE pedido_id = ?", req.pedido_id);
+                    for (Map<String, Object> item : items) {
+                        int cantidad = ((Number) item.get("cantidad")).intValue();
+                        double precioUnitario = ((Number) item.get("precio_unitario")).doubleValue();
+                        double subtotal = cantidad * precioUnitario;
+
+                        jdbcTemplate.update(
+                                "INSERT INTO venta_detalles (venta_id, producto_id, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)",
+                                newVentaId, item.get("producto_id"), cantidad, precioUnitario, subtotal
+                        );
+                    }
+
+                    // Update order details to link with sale
+                    String nuevoEstadoPago = (pendientePago == 1) ? "Pendiente" : "Pagado";
+                    jdbcTemplate.update(
+                            "UPDATE pedidos SET etapa_id = ?, venta_id = ?, estado_pago = ?, envases_entregados = ?, envases_devueltos = ?, quien_recibio = ?, monto_final = ?, metodo_pago_real = ?, venta_estado = 'completada', fecha_entrega = CURRENT_DATE WHERE id = ?",
+                            req.etapa_id, newVentaId, nuevoEstadoPago, entregados, devueltos, quienRecibio, total, metodoPago, req.pedido_id
+                    );
+                }
             } else if (esPerdido == 1) {
                 // Cancelled
                 jdbcTemplate.update(
@@ -294,9 +370,16 @@ public class PedidoController {
                         req.pedido_id
                 );
             } else {
-                // Regular move
+                // Regular move or reversion from delivered
+                Map<String, Object> currentPedido = jdbcTemplate.queryForMap("SELECT venta_id FROM pedidos WHERE id = ?", req.pedido_id);
+                Object ventaId = currentPedido.get("venta_id");
+                if (ventaId != null) {
+                    // Delete associated sale if moved back from delivered
+                    jdbcTemplate.update("DELETE FROM ventas WHERE id = ?", ventaId);
+                }
+
                 jdbcTemplate.update(
-                        "UPDATE pedidos SET etapa_id = ? WHERE id = ?",
+                        "UPDATE pedidos SET etapa_id = ?, venta_id = NULL, venta_estado = 'pendiente', envases_entregados = 0, envases_devueltos = 0 WHERE id = ?",
                         req.etapa_id,
                         req.pedido_id
                 );

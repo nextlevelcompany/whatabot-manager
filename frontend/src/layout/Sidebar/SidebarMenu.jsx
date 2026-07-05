@@ -73,11 +73,11 @@ export const SidebarMenu = [
                     },
                     {
                         name: 'Zonas de Entrega',
-                        path: '/pedidos/delivery-zones',
+                        path: '/admin/zones',
                     },
                     {
                         name: 'Flota y Conductores',
-                        path: '/pedidos/fleet',
+                        path: '/admin/fleet',
                     }
                 ]
             },
@@ -147,6 +147,10 @@ export const SidebarMenu = [
                     {
                         name: 'Movimientos de Caja',
                         path: '/finanzas/cash-flow',
+                    },
+                    {
+                        name: 'Compras de Almacén',
+                        path: '/finanzas/purchases',
                     },
                     {
                         name: 'Registro de Gastos',
