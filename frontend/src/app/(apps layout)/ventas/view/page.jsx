@@ -15,12 +15,31 @@ const getApiBase = () => {
 };
 const API_BASE = getApiBase();
 
+const getLocalDateString = (d) => {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+
+const formatDateSafe = (isoString) => {
+    if (!isoString) return '';
+    try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return isoString.split('T')[0];
+        return getLocalDateString(d);
+    } catch (e) {
+        return isoString.split('T')[0];
+    }
+};
+
 export default function SalesViewPage() {
     const [sales, setSales] = useState([]);
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState('list'); // 'list' | 'kanban'
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [hoveredCardId, setHoveredCardId] = useState(null);
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(20);
 
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -63,6 +82,44 @@ export default function SalesViewPage() {
         loadSales();
     }, []);
 
+    // Filter Helper: Weekday Programming
+    const filterByDay = (dateStr) => {
+        setFilterDesde(filterDesde === dateStr ? '' : dateStr);
+        setFilterHasta(filterHasta === dateStr ? '' : dateStr);
+    };
+
+    const getWeekDays = () => {
+        const list = [];
+        const days = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+        const now = new Date();
+        now.setHours(12, 0, 0, 0); // Normalize to midday to prevent timezone/DST date shifts
+        const start = new Date(now);
+        start.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(start);
+            d.setDate(start.getDate() + i);
+            const dateStr = getLocalDateString(d);
+            const label = days[d.getDay()];
+            const dayNum = d.getDate();
+            const isToday = dateStr === getLocalDateString(now);
+            const isActive = filterDesde === dateStr && filterHasta === dateStr;
+
+            // Count pending vs completed for this day in sales
+            const daySales = sales.filter(s => {
+                const sDate = formatDateSafe(s.fecha_venta);
+                return sDate === dateStr;
+            });
+            const pendingCount = daySales.filter(s => s.estado !== 'completada' && s.estado !== 'cancelada').length;
+            const completedCount = daySales.filter(s => s.estado === 'completada').length;
+
+            list.push({ dateStr, label, dayNum, isToday, isActive, pendingCount, completedCount });
+        }
+        return list;
+    };
+
+    const weekDays = getWeekDays();
+
     // Filter Logic
     const filteredSales = sales.filter(s => {
         const clientName = (s.cliente_nombre_completo || '').toLowerCase();
@@ -80,7 +137,7 @@ export default function SalesViewPage() {
 
         let matchesDate = true;
         if (filterDesde || filterHasta) {
-            const saleDate = s.fecha_venta ? s.fecha_venta.split('T')[0] : '';
+            const saleDate = formatDateSafe(s.fecha_venta);
             if (saleDate === '') {
                 matchesDate = false;
             } else {
@@ -91,6 +148,11 @@ export default function SalesViewPage() {
 
         return matchesSearch && matchesPago && matchesEntrega && matchesMetodo && matchesDate;
     });
+
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, filterDesde, filterHasta, filterPago, filterEntrega, filterMetodo]);
 
     // KPI stats
     const totalFacturado = filteredSales.reduce((sum, s) => s.estado !== 'cancelada' ? sum + parseFloat(s.total || 0) : sum, 0.0);
@@ -201,29 +263,42 @@ export default function SalesViewPage() {
     };
 
     const getEstadoBadge = (est) => {
-        if (est === 'completada') return <span className="badge badge-soft-success border border-success-soft">Completada</span>;
-        if (est === 'cancelada') return <span className="badge badge-soft-danger border border-danger-soft">Anulada</span>;
-        if (est === 'entregado') return <span className="badge badge-soft-info border border-info-soft">Entregado</span>;
-        return <span className="badge badge-soft-warning border border-warning-soft text-warning-dark">Pendiente</span>;
+        if (est === 'completada') return <span className="badge bg-soft-success text-success border border-success-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>● Completada</span>;
+        if (est === 'cancelada') return <span className="badge bg-soft-danger text-danger border border-danger-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Anulada</span>;
+        if (est === 'entregado') return <span className="badge bg-soft-info text-info border border-info-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Entregado</span>;
+        return <span className="badge bg-soft-warning text-warning border border-warning-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Pendiente</span>;
     };
 
     const getPagoBadge = (pago) => {
-        if (pago === 'pagado') return <Badge bg="success">Pagado</Badge>;
-        if (pago === 'parcial') return <Badge bg="warning text-dark">Parcial</Badge>;
-        return <Badge bg="danger">Pendiente</Badge>;
+        if (pago === 'pagado') return <span className="badge bg-soft-success text-success border border-success-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>● Pagado</span>;
+        if (pago === 'parcial') return <span className="badge bg-soft-warning text-warning border border-warning-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>◐ Parcial</span>;
+        return <span className="badge bg-soft-danger text-danger border border-danger-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Pendiente</span>;
     };
 
     return (
         <div className="p-4" style={{ background: '#f8fafc', minHeight: '100vh' }}>
             {/* Header Toolbar */}
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 bg-white p-3 rounded shadow-sm border mb-4">
-                <h4 className="mb-0 text-primary fw-bold d-flex align-items-center">
-                    <Button variant="link" className="p-0 me-2 text-primary shadow-none border-0" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-                        <Settings size={20} />
+                <div className="d-flex align-items-center">
+                    <Button 
+                        variant={sidebarCollapsed ? "primary" : "outline-primary"} 
+                        size="sm" 
+                        className="me-3 d-flex align-items-center gap-1 shadow-sm" 
+                        onClick={() => {
+                            const newCollapsed = !sidebarCollapsed;
+                            setSidebarCollapsed(newCollapsed);
+                            localStorage.setItem('ventas_sidebar_collapsed', String(newCollapsed));
+                        }} 
+                        title={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
+                    >
+                        <List size={15} />
+                        <span className="fw-semibold">{sidebarCollapsed ? "Mostrar Filtros" : "Ocultar Filtros"}</span>
                     </Button>
-                    <DollarSign size={24} className="me-2" />
-                    Historial de Ventas
-                </h4>
+                    <h4 className="mb-0 text-primary fw-bold d-flex align-items-center">
+                        <DollarSign size={24} className="me-2" />
+                        Historial de Ventas
+                    </h4>
+                </div>
                 <div style={{ maxWidth: '400px', flexGrow: 1 }} className="mx-lg-4">
                     <InputGroup>
                         <InputGroup.Text className="bg-white border-end-0">
@@ -238,15 +313,7 @@ export default function SalesViewPage() {
                     </InputGroup>
                 </div>
                 <div className="d-flex gap-2 align-items-center">
-                    <div className="btn-group bg-light border rounded p-1" style={{ height: '40px' }}>
-                        <Button
-                            variant={viewMode === 'list' ? 'primary' : 'light'}
-                            size="sm"
-                            className="fw-bold px-3 border-0"
-                            onClick={() => setViewMode('list')}
-                        >
-                            LISTA
-                        </Button>
+                    <div className="btn-group bg-light border rounded p-1">
                         <Button
                             variant={viewMode === 'kanban' ? 'primary' : 'light'}
                             size="sm"
@@ -255,8 +322,16 @@ export default function SalesViewPage() {
                         >
                             KANBAN
                         </Button>
+                        <Button
+                            variant={viewMode === 'list' ? 'primary' : 'light'}
+                            size="sm"
+                            className="fw-bold px-3 border-0"
+                            onClick={() => setViewMode('list')}
+                        >
+                            LISTA
+                        </Button>
                     </div>
-                    <Button variant="primary" className="fw-bold" style={{ height: '40px' }} href="/ventas/create">
+                    <Button variant="primary" size="sm" className="fw-bold px-3 d-inline-flex align-items-center justify-content-center" href="/ventas/create">
                         <Plus size={16} className="me-1" /> NUEVO
                     </Button>
                 </div>
@@ -320,6 +395,48 @@ export default function SalesViewPage() {
                                 >
                                     LIMPIAR
                                 </Button>
+                            </div>
+
+                            {/* Ventas de la semana */}
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Ventas de la semana</span>
+                                <div className="d-flex justify-content-between gap-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                                    {weekDays.map(day => (
+                                        <button
+                                            key={day.dateStr}
+                                            onClick={() => filterByDay(day.dateStr)}
+                                            className={`btn btn-sm d-flex flex-column align-items-center justify-content-center p-1 rounded-3 ${
+                                                day.isActive ? 'btn-primary' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
+                                            }`}
+                                            style={{ minHeight: '56px', width: '100%', minWidth: 0, overflow: 'hidden' }}
+                                        >
+                                            <span style={{ fontSize: '7.5px', fontWeight: '800' }}>{day.label}</span>
+                                            <span className="fw-bold" style={{ fontSize: '11px' }}>{day.dayNum}</span>
+                                            <div className="d-flex gap-1 mt-1">
+                                                <span className="d-flex align-items-center justify-content-center fw-bold rounded-circle" style={{ 
+                                                    width: '14px', 
+                                                    height: '14px', 
+                                                    fontSize: '6.5px',
+                                                    backgroundColor: day.isActive ? '#ffffff' : '#0d6efd',
+                                                    color: day.isActive ? '#0d6efd' : '#ffffff'
+                                                }}>
+                                                    {day.pendingCount}
+                                                </span>
+                                                {day.completedCount > 0 && (
+                                                    <span className="d-flex align-items-center justify-content-center fw-bold rounded-circle" style={{ 
+                                                        width: '14px', 
+                                                        height: '14px', 
+                                                        fontSize: '6.5px',
+                                                        backgroundColor: day.isActive ? '#ffffff' : '#198754',
+                                                        color: day.isActive ? '#198754' : '#ffffff'
+                                                    }}>
+                                                        {day.completedCount}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
                             {/* Date filters */}
@@ -446,7 +563,7 @@ export default function SalesViewPage() {
                                                                             <span className="fw-bold text-dark font-size-13">{sale.numero_venta}</span>
                                                                             {getEstadoBadge(sale.estado)}
                                                                         </div>
-                                                                        <span className="small text-muted">{sale.fecha_venta ? sale.fecha_venta.split('T')[0] : ''}</span>
+                                                                        <span className="small text-muted">{formatDateSafe(sale.fecha_venta)}</span>
                                                                     </div>
 
                                                                     <div className="fw-bold text-dark font-size-13 mb-1 text-truncate" style={{ maxWidth: '240px' }}>
@@ -504,9 +621,9 @@ export default function SalesViewPage() {
 
                             {/* LIST VIEW */}
                             {viewMode === 'list' && (
-                                <Card className="border-0 shadow-sm rounded-3">
-                                    <Table hover responsive className="align-middle mb-0 bg-white">
-                                        <thead className="table-light font-size-12">
+                                <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white">
+                                    <Table hover responsive className="align-middle mb-0 text-nowrap bg-white">
+                                        <thead className="table-light text-muted font-size-12">
                                             <tr>
                                                 <th className="ps-3">Nº Venta</th>
                                                 <th>Cliente</th>
@@ -516,55 +633,120 @@ export default function SalesViewPage() {
                                                 <th>Pagado</th>
                                                 <th>Entrega</th>
                                                 <th>Pago</th>
-                                                <th style={{ width: '130px' }}></th>
+                                                <th className="text-end pe-3">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="font-size-13">
-                                            {filteredSales.map(row => (
-                                                <tr key={row.id}>
-                                                    <td className="ps-3"><span className="fw-bold text-dark">{row.numero_venta}</span></td>
-                                                    <td>{row.cliente_nombre_completo || 'Cliente General'}</td>
-                                                    <td>{row.fecha_venta ? row.fecha_venta.split('T')[0] : '—'}</td>
-                                                    <td>
-                                                        <div className="text-truncate" style={{ maxWidth: '280px' }} title={row.productos_detalle}>
-                                                            {row.productos_detalle || '—'}
-                                                        </div>
-                                                    </td>
-                                                    <td><strong className="text-dark">S/ {parseFloat(row.total || 0).toFixed(2)}</strong></td>
-                                                    <td><span className="text-success fw-bold">S/ {parseFloat(row.monto_pagado || 0).toFixed(2)}</span></td>
-                                                    <td>{getEstadoBadge(row.estado)}</td>
-                                                    <td>{getPagoBadge(row.estado_pago)}</td>
-                                                    <td>
-                                                        <div className="d-flex align-items-center justify-content-end gap-1">
-                                                            <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Detalle" onClick={() => handleOpenView(row)}>
-                                                                <Eye size={15} />
-                                                            </Button>
-                                                            {row.estado !== 'cancelada' && (
-                                                                <>
-                                                                    <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Validar / Cobrar" onClick={() => handleOpenValidate(row)}>
-                                                                        <Check size={15} className="text-success" />
-                                                                    </Button>
-                                                                    <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Anular" onClick={() => handleOpenCancel(row)}>
-                                                                        <X size={15} className="text-warning-dark" />
-                                                                    </Button>
-                                                                </>
-                                                            )}
-                                                            <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Eliminar" onClick={() => handleDeleteSale(row.id, row.numero_venta)}>
-                                                                <Trash size={15} className="text-danger" />
-                                                            </Button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {filteredSales.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(row => {
+                                                const fullName = row.cliente_nombre_completo || 'Cliente General';
+                                                const initials = fullName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                                                const colors = ['info', 'warning', 'success', 'danger', 'primary', 'violet'];
+                                                const avtBg = colors[(row.id || 0) % colors.length];
+
+                                                return (
+                                                    <tr key={row.id}>
+                                                        <td className="ps-3"><strong className="text-dark" style={{ fontSize: '13px' }}>{row.numero_venta}</strong></td>
+                                                        <td>
+                                                            <div className="d-flex align-items-center">
+                                                                <div className="me-2">
+                                                                    <div className={`avatar avatar-xs avatar-rounded bg-soft-${avtBg} text-${avtBg} d-flex align-items-center justify-content-center fw-bold`} style={{ width: '32px', height: '32px', fontSize: '11px', borderRadius: '50%' }}>
+                                                                        {initials}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <div className="fw-semibold text-dark text-high-em" style={{ fontSize: '13px' }}>{fullName}</div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td><span className="small text-muted">{formatDateSafe(row.fecha_venta) || '—'}</span></td>
+                                                        <td>
+                                                            <span className="text-muted small text-wrap d-block text-truncate" style={{ fontSize: '12px', lineHeight: '1.4', maxWidth: '240px' }} title={row.productos_detalle}>
+                                                                {row.productos_detalle || '—'}
+                                                            </span>
+                                                        </td>
+                                                        <td><strong className="text-primary fw-bold" style={{ fontSize: '13px' }}>S/ {parseFloat(row.total || 0).toFixed(2)}</strong></td>
+                                                        <td><span className="text-success fw-bold" style={{ fontSize: '13px' }}>S/ {parseFloat(row.monto_pagado || 0).toFixed(2)}</span></td>
+                                                        <td>{getEstadoBadge(row.estado)}</td>
+                                                        <td>{getPagoBadge(row.estado_pago)}</td>
+                                                        <td className="text-end pe-3">
+                                                            <div className="d-inline-flex gap-1">
+                                                                <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover" title="Detalle" onClick={() => handleOpenView(row)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
+                                                                    <Eye size={14} className="text-info" />
+                                                                </Button>
+                                                                {row.estado !== 'cancelada' && (
+                                                                    <>
+                                                                        <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover" title="Validar / Cobrar" onClick={() => handleOpenValidate(row)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
+                                                                            <Check size={14} className="text-success" />
+                                                                        </Button>
+                                                                        <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover text-warning-dark" title="Anular" onClick={() => handleOpenCancel(row)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
+                                                                            <X size={14} />
+                                                                        </Button>
+                                                                    </>
+                                                                )}
+                                                                <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover text-danger" title="Eliminar" onClick={() => handleDeleteSale(row.id, row.numero_venta)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
+                                                                    <Trash size={14} />
+                                                                </Button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                             {filteredSales.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={9} className="text-center py-5 text-muted">
-                                                        No se encontraron transacciones registradas.
-                                                    </td>
+                                                    <td colSpan={9} className="text-center py-4 text-muted">No se encontraron ventas.</td>
                                                 </tr>
                                             )}
                                         </tbody>
                                     </Table>
+                                    
+                                    {/* Pagination Controls */}
+                                    {filteredSales.length > 0 && (
+                                        <div className="d-flex justify-content-between align-items-center p-3 border-top bg-light-soft">
+                                            <div className="text-muted small">
+                                                Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, filteredSales.length)} de {filteredSales.length} ventas
+                                            </div>
+                                            <div className="d-flex align-items-center gap-2">
+                                                <Form.Select 
+                                                    size="sm" 
+                                                    className="w-auto shadow-none" 
+                                                    value={itemsPerPage} 
+                                                    onChange={(e) => {
+                                                        setItemsPerPage(Number(e.target.value));
+                                                        setCurrentPage(1);
+                                                    }}
+                                                >
+                                                    <option value="10">10 por pág</option>
+                                                    <option value="20">20 por pág</option>
+                                                    <option value="50">50 por pág</option>
+                                                    <option value="100">100 por pág</option>
+                                                </Form.Select>
+                                                
+                                                <div className="btn-group shadow-sm">
+                                                    <Button 
+                                                        variant="white" 
+                                                        size="sm" 
+                                                        className="border bg-white"
+                                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                        disabled={currentPage === 1}
+                                                    >
+                                                        Anterior
+                                                    </Button>
+                                                    <Button variant="light" size="sm" className="border fw-bold px-3" disabled>
+                                                        {currentPage} / {Math.ceil(filteredSales.length / itemsPerPage)}
+                                                    </Button>
+                                                    <Button 
+                                                        variant="white" 
+                                                        size="sm" 
+                                                        className="border bg-white"
+                                                        onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredSales.length / itemsPerPage), p + 1))}
+                                                        disabled={currentPage === Math.ceil(filteredSales.length / itemsPerPage)}
+                                                    >
+                                                        Siguiente
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </Card>
                             )}
                         </>
@@ -709,7 +891,7 @@ export default function SalesViewPage() {
                                 <Col xs={6}><strong>Doc. Identidad:</strong></Col>
                                 <Col xs={6} className="text-end">{selectedSale.numero_documento || '—'}</Col>
                                 <Col xs={6}><strong>Fecha Venta:</strong></Col>
-                                <Col xs={6} className="text-end">{selectedSale.fecha_venta ? selectedSale.fecha_venta.split('T')[0] : '—'}</Col>
+                                <Col xs={6} className="text-end">{formatDateSafe(selectedSale.fecha_venta) || '—'}</Col>
                                 <Col xs={6}><strong>Método Pago:</strong></Col>
                                 <Col xs={6} className="text-end">{selectedSale.metodo_pago || '—'}</Col>
                             </Row>

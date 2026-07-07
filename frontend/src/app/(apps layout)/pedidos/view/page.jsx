@@ -65,6 +65,10 @@ export default function PedidosViewPage() {
         orderCode: true, clientName: true, contactPerson: true, phone: true, address: true, zone: true, driver: true, date: true, products: true, total: true, mapLink: true
     });
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(20);
+
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
     const [filterDesde, setFilterDesde] = useState('');
@@ -257,6 +261,7 @@ export default function PedidosViewPage() {
         });
 
         setCurrentFiltered(filtered);
+        setCurrentPage(1); // Reset to page 1 when filters change
     }, [allData.pedidos, searchTerm, filterDesde, filterHasta, filterZona, filterChofer, filterPago, filterPrioridad, filterCategoria]);
 
     // Save Route
@@ -820,6 +825,45 @@ export default function PedidosViewPage() {
             }
         };
 
+        const sc = allData.columns.find(c => String(c.id) === String(order.etapa_id));
+
+        if (tc.es_perdido == 1) {
+            Swal.fire({
+                title: 'Cancelar Pedido',
+                text: 'Por favor, escribe el motivo de la cancelación. El pedido quedará bloqueado permanentemente.',
+                input: 'textarea',
+                inputPlaceholder: 'Ej: El cliente no estaba en casa, cambió de opinión...',
+                showCancelButton: true,
+                confirmButtonText: 'Cancelar Pedido',
+                confirmButtonColor: '#ef4444',
+                cancelButtonText: 'Cerrar',
+                preConfirm: (reason) => {
+                    if (!reason) {
+                        Swal.showValidationMessage('Debes ingresar un motivo');
+                    }
+                    return { cancel_reason: reason };
+                }
+            }).then(r => {
+                if (r.isConfirmed) executeMove(r.value);
+            });
+            return;
+        }
+
+        if (sc && sc.es_entregado == 1 && tc.es_entregado != 1 && tc.es_perdido != 1) {
+            Swal.fire({
+                title: '¿Revertir Entrega?',
+                text: 'Vas a retroceder un pedido entregado. Esto borrará el registro de la venta asociada permanentemente. ¿Continuar?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, revertir',
+                confirmButtonColor: '#f59e0b',
+                cancelButtonText: 'Cancelar'
+            }).then(r => {
+                if (r.isConfirmed) executeMove();
+            });
+            return;
+        }
+
         if (tc.es_entregado == 1) {
             const todayStr = getLocalDateString(new Date());
             const isDifferentDate = order.fecha_entrega !== todayStr;
@@ -1154,23 +1198,28 @@ export default function PedidosViewPage() {
                     </div>
                     <Button 
                         variant="success" 
-                        className="fw-bold d-inline-flex align-items-center justify-content-center bg-success text-white border-0" 
-                        style={{ height: '40px' }} 
+                        size="sm"
+                        className="fw-bold d-inline-flex align-items-center justify-content-center bg-success text-white border-0 px-3" 
                         onClick={exportToExcel}
                         title="Exportar a Excel"
                     >
-                        <Download size={16} className="me-1" /> EXCEL
+                        <Download size={16} />
                     </Button>
                     <Button 
                         variant="light" 
-                        className="fw-bold d-inline-flex align-items-center justify-content-center border me-2" 
-                        style={{ height: '40px' }} 
+                        size="sm"
+                        className="fw-bold d-inline-flex align-items-center justify-content-center border me-2 px-3" 
                         onClick={openGlobalConfig}
                         title="Configurar vista"
                     >
                         <Settings size={16} />
                     </Button>
-                    <Button variant="primary" className="fw-bold" style={{ height: '40px' }} href="/pedidos/create">
+                    <Button 
+                        variant="primary" 
+                        size="sm"
+                        className="fw-bold d-inline-flex align-items-center justify-content-center px-3" 
+                        href="/pedidos/create"
+                    >
                         <Plus size={16} className="me-1" /> NUEVO
                     </Button>
                 </div>
@@ -1425,11 +1474,11 @@ export default function PedidosViewPage() {
 
                                                 <div style={{ minHeight: '150px' }}>
                                                     {colOrders.map(order => {
-                                                        const isLocked = col.es_entregado == 1 || col.es_perdido == 1 || (order.venta_id && (order.venta_estado === 'completada' || order.venta_estado === 'cancelada'));
+                                                        const isLocked = col.es_perdido == 1 || (order.venta_id && (order.venta_estado === 'completada' || order.venta_estado === 'cancelada'));
                                                         const dColor = getDriverColor(order.chofer_n);
                                                         const priorityColors = {
                                                             Alta: '#ef4444', 
-                                                            Media: '#f59e0b', 
+                                                            Media: '#FF8924', 
                                                             Baja: '#10b981'
                                                         };
                                                         const leftBorder = priorityColors[order.prioridad] || '#cbd5e1';
@@ -1515,13 +1564,18 @@ export default function PedidosViewPage() {
                                                                     )}
 
                                                                     {order.venta_estado === 'entregado' && (
-                                                                        <div className="w-100 py-1.5 px-3 mb-2 rounded-3 text-center fw-bold text-info border border-info" style={{ fontSize: '11.5px', background: '#e0f2fe' }}>
+                                                                        <div className="w-100 py-1.5 px-3 mb-2 rounded-3 text-center fw-bold text-white shadow-sm" style={{ fontSize: '11.5px', background: '#0284c7' }}>
                                                                             ✓ PEDIDO ENTREGADO
                                                                         </div>
                                                                     )}
                                                                     {order.venta_estado === 'completada' && (
-                                                                        <div className="w-100 py-1.5 px-3 mb-2 rounded-3 text-center fw-bold text-success border border-success" style={{ fontSize: '11.5px', background: '#dcfce7' }}>
+                                                                        <div className="w-100 py-1.5 px-3 mb-2 rounded-3 text-center fw-bold text-white shadow-sm" style={{ fontSize: '11.5px', background: '#16a34a' }}>
                                                                             ✓ ENTREGADO Y COBRADO
+                                                                        </div>
+                                                                    )}
+                                                                    {order.venta_estado === 'cancelada' && (
+                                                                        <div className="w-100 py-1.5 px-3 mb-2 rounded-3 text-center fw-bold text-white shadow-sm" style={{ fontSize: '11.5px', background: '#dc2626' }}>
+                                                                            ✕ PEDIDO CANCELADO
                                                                         </div>
                                                                     )}
 
@@ -1551,9 +1605,11 @@ export default function PedidosViewPage() {
                                                                                         <Edit size={13} />
                                                                                     </a>
                                                                                 )}
-                                                                                <Button variant="link" className="p-1 text-danger hover-bg rounded-circle" onClick={() => deleteOrder(order.id)} title="Eliminar Pedido">
-                                                                                    <Trash size={13} />
-                                                                                </Button>
+                                                                                {order.venta_estado !== 'cancelada' && (
+                                                                                    <Button variant="link" className="p-1 text-danger hover-bg rounded-circle" onClick={() => deleteOrder(order.id)} title="Eliminar Pedido">
+                                                                                        <Trash size={13} />
+                                                                                    </Button>
+                                                                                )}
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -1598,9 +1654,11 @@ export default function PedidosViewPage() {
                                              </tr>
                                          </thead>
                                          <tbody className="font-size-13">
-                                             {currentFiltered.map(order => {
-                                                 const orderCol = allData.columns.find(col => String(col.id) === String(order.columna_id));
+                                             {currentFiltered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(order => {
+                                                 const orderCol = allData.columns.find(col => String(col.id) === String(order.etapa_id));
                                                  const colName = orderCol ? orderCol.nombre : 'Sin etapa';
+                                                 const stageColors = ['primary', 'warning', 'info', 'violet', 'dark', 'success', 'danger'];
+                                                 const stageColor = stageColors[(order.etapa_id || 0) % stageColors.length];
                                                  const fullName = ((order.contacto_nombre || '') + ' ' + (order.contacto_apellido || '')).trim();
                                                  const initials = fullName ? fullName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : '?';
                                                  const colors = ['info', 'warning', 'success', 'danger', 'primary', 'violet'];
@@ -1661,7 +1719,7 @@ export default function PedidosViewPage() {
                                                          )}
                                                          {listSettings.stage && (
                                                              <td>
-                                                                 <Badge bg="" className="bg-soft-info text-info border border-info-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>
+                                                                 <Badge bg="" className={`bg-${stageColor} text-${stageColor === 'warning' || stageColor === 'light' ? 'dark' : 'white'} border border-${stageColor} rounded-pill shadow-sm`} style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>
                                                                      {colName}
                                                                  </Badge>
                                                              </td>
@@ -1702,15 +1760,17 @@ export default function PedidosViewPage() {
                                                                      >
                                                                          <Edit size={14} className="text-primary" />
                                                                      </Button>
-                                                                     <Button 
-                                                                         variant="flush-dark" 
-                                                                         className="btn-icon btn-rounded flush-soft-hover text-danger" 
-                                                                         title="Eliminar"
-                                                                         onClick={() => deleteOrder(order.id)}
-                                                                         style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
-                                                                     >
-                                                                         <Trash size={14} />
-                                                                     </Button>
+                                                                     {order.venta_estado !== 'cancelada' && (
+                                                                         <Button 
+                                                                             variant="flush-dark" 
+                                                                             className="btn-icon btn-rounded flush-soft-hover text-danger" 
+                                                                             title="Eliminar"
+                                                                             onClick={() => deleteOrder(order.id)}
+                                                                             style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
+                                                                         >
+                                                                             <Trash size={14} />
+                                                                         </Button>
+                                                                     )}
                                                                  </div>
                                                              </td>
                                                          )}
@@ -1724,6 +1784,55 @@ export default function PedidosViewPage() {
                                              )}
                                          </tbody>
                                      </Table>
+                                     
+                                     {/* Pagination Controls */}
+                                     {currentFiltered.length > 0 && (
+                                         <div className="d-flex justify-content-between align-items-center p-3 border-top bg-light-soft">
+                                             <div className="text-muted small">
+                                                 Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, currentFiltered.length)} de {currentFiltered.length} pedidos
+                                             </div>
+                                             <div className="d-flex align-items-center gap-2">
+                                                 <Form.Select 
+                                                     size="sm" 
+                                                     className="w-auto shadow-none" 
+                                                     value={itemsPerPage} 
+                                                     onChange={(e) => {
+                                                         setItemsPerPage(Number(e.target.value));
+                                                         setCurrentPage(1);
+                                                     }}
+                                                 >
+                                                     <option value="10">10 por pág</option>
+                                                     <option value="20">20 por pág</option>
+                                                     <option value="50">50 por pág</option>
+                                                     <option value="100">100 por pág</option>
+                                                 </Form.Select>
+                                                 
+                                                 <div className="btn-group shadow-sm">
+                                                     <Button 
+                                                         variant="white" 
+                                                         size="sm" 
+                                                         className="border"
+                                                         onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                         disabled={currentPage === 1}
+                                                     >
+                                                         Anterior
+                                                     </Button>
+                                                     <Button variant="light" size="sm" className="border fw-bold px-3" disabled>
+                                                         {currentPage} / {Math.ceil(currentFiltered.length / itemsPerPage)}
+                                                     </Button>
+                                                     <Button 
+                                                         variant="white" 
+                                                         size="sm" 
+                                                         className="border"
+                                                         onClick={() => setCurrentPage(p => Math.min(Math.ceil(currentFiltered.length / itemsPerPage), p + 1))}
+                                                         disabled={currentPage === Math.ceil(currentFiltered.length / itemsPerPage)}
+                                                     >
+                                                         Siguiente
+                                                     </Button>
+                                                 </div>
+                                             </div>
+                                         </div>
+                                     )}
                                  </Card>
                              )}
 

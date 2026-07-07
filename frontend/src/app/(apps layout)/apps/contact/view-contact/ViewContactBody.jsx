@@ -1438,10 +1438,11 @@ const ViewContactBody = ({ setContactName }) => {
                                                         : <Badge bg="danger">Pendiente</Badge>);
 
                                                 const getEntregaBadge = (est) => {
+                                                    const raw = est || 'Pendiente';
                                                     const clean = String(est || '').toLowerCase();
                                                     if (clean === 'completada' || clean === 'entregado') return <Badge bg="success-soft text-success">Entregado</Badge>;
                                                     if (clean === 'cancelada' || clean === 'anulada') return <Badge bg="danger-soft text-danger">Anulado</Badge>;
-                                                    return <Badge bg="warning-soft text-warning-dark">Pendiente</Badge>;
+                                                    return <Badge bg="info-soft text-info">{raw.toUpperCase()}</Badge>;
                                                 };
 
                                                 return (

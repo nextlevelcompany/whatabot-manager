@@ -259,18 +259,25 @@ public class PedidoController {
         try {
             // Fetch target stage info
             Map<String, Object> stage = jdbcTemplate.queryForMap(
-                    "SELECT es_entregado, es_perdido FROM etapas_pedido WHERE id = ?", req.etapa_id
+                    "SELECT nombre, es_entregado, es_perdido FROM etapas_pedido WHERE id = ?", req.etapa_id
             );
-
+            String stageName = (String) stage.get("nombre");
             int esEntregado = ((Number) stage.get("es_entregado")).intValue();
             int esPerdido = ((Number) stage.get("es_perdido")).intValue();
 
+            // Fetch current order to get contacto_id and other details
+            Map<String, Object> currentPedido = jdbcTemplate.queryForMap(
+                    "SELECT venta_id, contacto_id, total, direccion_entrega, notas, numero_pedido, metodo_pago FROM pedidos WHERE id = ?", req.pedido_id
+            );
+            Object contactoId = currentPedido.get("contacto_id");
+
+            // Update contact status to the name of the new stage
+            if (contactoId != null && stageName != null) {
+                jdbcTemplate.update("UPDATE contacts SET status = ? WHERE id = ?", stageName, contactoId);
+            }
+
             if (esEntregado == 1) {
                 // CIERRE DE PEDIDO (ENTREGA)
-                // Check if venta_id is already registered
-                Map<String, Object> currentPedido = jdbcTemplate.queryForMap(
-                        "SELECT venta_id, contacto_id, total, direccion_entrega, notas, numero_pedido, metodo_pago FROM pedidos WHERE id = ?", req.pedido_id
-                );
                 Object existingVentaId = currentPedido.get("venta_id");
 
                 if (existingVentaId == null) {
@@ -298,9 +305,6 @@ public class PedidoController {
                     double stFinal = total / 1.18; // 18% IGV
                     double igvFinal = total - stFinal;
                     double montoPagadoFinal = (pendientePago == 1) ? 0.0 : total;
-
-                    // Update contact status to 'Cliente'
-                    jdbcTemplate.update("UPDATE contacts SET status = 'Cliente' WHERE id = ?", currentPedido.get("contacto_id"));
 
                     // Insert sale record with status 'entregado' instead of 'completada'!
                     // This allows validating and confirming the sale in Ventas without locking it beforehand.
@@ -361,17 +365,19 @@ public class PedidoController {
                 }
             } else if (esPerdido == 1) {
                 // Cancelled
+                String reason = req.cancel_reason != null && !req.cancel_reason.trim().isEmpty() ? "\nCancelado por: " + req.cancel_reason : "";
                 jdbcTemplate.update(
                         "UPDATE pedidos SET " +
                         "  etapa_id = ?, " +
-                        "  venta_estado = 'cancelada' " +
+                        "  venta_estado = 'cancelada', " +
+                        "  notas = CONCAT(COALESCE(notas, ''), ?) " +
                         "WHERE id = ?",
                         req.etapa_id,
+                        reason,
                         req.pedido_id
                 );
             } else {
                 // Regular move or reversion from delivered
-                Map<String, Object> currentPedido = jdbcTemplate.queryForMap("SELECT venta_id FROM pedidos WHERE id = ?", req.pedido_id);
                 Object ventaId = currentPedido.get("venta_id");
                 if (ventaId != null) {
                     // Delete associated sale if moved back from delivered
@@ -530,5 +536,6 @@ public class PedidoController {
         public Double monto_final;
         public String metodo_pago_real;
         public Integer pendiente_pago;
+        public String cancel_reason;
     }
 }

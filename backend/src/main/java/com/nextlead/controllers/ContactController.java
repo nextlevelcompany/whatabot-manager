@@ -61,14 +61,14 @@ public class ContactController {
                 "       p.total, p.estado_pago, ep.nombre as estado_entrega, p.direccion_entrega " +
                 "FROM pedidos p " +
                 "LEFT JOIN etapas_pedido ep ON p.etapa_id = ep.id " +
-                "WHERE p.contacto_id = ? AND p.venta_id IS NULL " +
+                "WHERE p.contacto_id IN (SELECT id FROM contacts WHERE id = ? OR empresa_id = ? OR id = (SELECT empresa_id FROM contacts WHERE id = ?)) " +
                 "UNION ALL " +
                 "SELECT 'venta' as tipo, v.id, v.numero_venta as numero, v.fecha_venta as fecha, " +
                 "       v.total, v.estado_pago, v.estado as estado_entrega, v.direccion_entrega " +
                 "FROM ventas v " +
-                "WHERE v.contacto_id = ? " +
+                "WHERE v.contacto_id IN (SELECT id FROM contacts WHERE id = ? OR empresa_id = ? OR id = (SELECT empresa_id FROM contacts WHERE id = ?)) " +
                 "ORDER BY fecha DESC";
-            return ResponseEntity.ok(jdbcTemplate.queryForList(sql, id, id));
+            return ResponseEntity.ok(jdbcTemplate.queryForList(sql, id, id, id, id, id, id));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(java.util.Map.of("message", "Error al obtener historial: " + e.getMessage()));
