@@ -43,6 +43,7 @@ services:
       - "8080:8080"
     volumes:
       - nextlead_uploads:/app/uploads
+      - nextlead_backend_logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,10 +81,75 @@ services:
     networks:
       - nextlead_network
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nextlead_prometheus
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+    networks:
+      - nextlead_network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: nextlead_loki
+    restart: always
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    networks:
+      - nextlead_network
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: nextlead_promtail
+    restart: always
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml
+      - nextlead_backend_logs:/logs:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - nextlead_network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nextlead_grafana
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "4000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - nextlead_network
+
 volumes:
   postgres_data:
     driver: local
   nextlead_uploads:
+    driver: local
+  nextlead_backend_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:

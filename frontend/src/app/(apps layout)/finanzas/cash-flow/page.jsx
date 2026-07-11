@@ -21,11 +21,21 @@ export default function CashFlowPage() {
     const [summary, setSummary] = useState({ total_ingresos: 0, total_egresos: 0, saldo_neto: 0 });
     const [loading, setLoading] = useState(true);
 
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+
     // Filters
     const [desde, setDesde] = useState('');
     const [hasta, setHasta] = useState('');
     const [tipo, setTipo] = useState('all');
     const [metodo, setMetodo] = useState('all');
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('cashflow_sidebar_collapsed') === 'true';
+        }
+        return false;
+    });
 
     // Register Modal
     const [showModal, setShowModal] = useState(false);
@@ -40,6 +50,43 @@ export default function CashFlowPage() {
         fecha: new Date().toISOString().split('T')[0] + ' 12:00:00'
     };
     const [form, setForm] = useState(defaultForm);
+
+    const getLocalDateString = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    const filterByDay = (dateStr) => {
+        setDesde(desde === dateStr ? '' : dateStr);
+        setHasta(hasta === dateStr ? '' : dateStr);
+        setCurrentPage(1);
+    };
+
+    const getWeekDays = () => {
+        const list = [];
+        const days = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+        const now = new Date();
+        now.setHours(12, 0, 0, 0); 
+        const start = new Date(now);
+        start.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(start);
+            d.setDate(start.getDate() + i);
+            const dateStr = getLocalDateString(d);
+            const label = days[d.getDay()];
+            const dayNum = d.getDate();
+            const isToday = dateStr === getLocalDateString(now);
+            const isActive = desde === dateStr && hasta === dateStr;
+
+            list.push({ dateStr, label, dayNum, isToday, isActive });
+        }
+        return list;
+    };
+
+    const weekDays = getWeekDays();
 
     const loadData = async () => {
         setLoading(true);
@@ -145,10 +192,10 @@ export default function CashFlowPage() {
 
     const getBadgeForMethod = (method) => {
         switch (method?.toLowerCase()) {
-            case 'yape/plin': return 'info-soft text-info';
-            case 'transferencia': return 'primary-soft text-primary';
-            case 'efectivo': return 'success-soft text-success';
-            default: return 'light text-dark';
+            case 'yape/plin': return 'info text-white';
+            case 'transferencia': return 'primary text-white';
+            case 'efectivo': return 'success text-white';
+            default: return 'secondary text-white';
         }
     };
 
@@ -166,163 +213,225 @@ export default function CashFlowPage() {
                 </Button>
             </div>
 
-            {/* Account Balances Grid */}
-            <h6 className="fw-bold text-dark mb-3">Saldos por Cuenta / Método de Pago</h6>
-            <Row className="g-3 mb-4">
-                {balances.map((b, i) => (
-                    <Col md={4} key={i}>
-                        <Card className="shadow-sm border-0 bg-white rounded-3">
-                            <Card.Body className="p-3 d-flex align-items-center">
-                                <div className={`p-2 rounded-circle me-3 bg-light`}>
-                                    {b.metodo_pago?.toLowerCase() === 'efectivo' ? <Icons.Cash size={22} className="text-success" /> :
-                                     b.metodo_pago?.toLowerCase() === 'transferencia' ? <Icons.BuildingBank size={22} className="text-primary" /> :
-                                     <Icons.DeviceMobile size={22} className="text-info" />}
-                                </div>
-                                <div className="w-100">
-                                    <div className="small text-muted fw-semibold">{b.metodo_pago}</div>
-                                    <h4 className="fw-extrabold mb-0 d-flex justify-content-between">
-                                        S/ {parseFloat(b.saldo || 0).toFixed(2)}
-                                        <small className="text-muted fw-normal" style={{ fontSize: '11px', alignSelf: 'center' }}>
-                                            (+{parseFloat(b.ingresos || 0).toFixed(0)} / -{parseFloat(b.egresos || 0).toFixed(0)})
-                                        </small>
-                                    </h4>
-                                </div>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                ))}
-                {balances.length === 0 && (
-                    <Col md={12} className="text-center py-2 text-muted small">No hay saldos registrados aún.</Col>
-                )}
-            </Row>
 
-            {/* Period Summary & Filters */}
-            <Row className="g-4 mb-4">
-                <Col lg={4}>
-                    <Card className="shadow-sm border-0 bg-primary-soft border-primary border-top border-3 rounded-3 h-100">
-                        <Card.Body className="p-4 d-flex flex-column justify-content-between">
-                            <div>
-                                <h6 className="fw-bold text-primary mb-3">Balance del Periodo Seleccionado</h6>
-                                <div className="d-flex justify-content-between mb-2">
-                                    <span className="small text-muted">Ingresos Totales:</span>
-                                    <strong className="text-success">S/ {parseFloat(summary.total_ingresos || 0).toFixed(2)}</strong>
-                                </div>
-                                <div className="d-flex justify-content-between mb-2">
-                                    <span className="small text-muted">Egresos Totales:</span>
-                                    <strong className="text-danger">S/ {parseFloat(summary.total_egresos || 0).toFixed(2)}</strong>
-                                </div>
-                            </div>
-                            <div className="border-top pt-3 mt-3">
-                                <div className="d-flex justify-content-between align-items-center">
-                                    <span className="fw-bold text-dark fs-6">Saldo Neto:</span>
-                                    <h4 className={`fw-extrabold mb-0 ${summary.saldo_neto >= 0 ? 'text-success' : 'text-danger'}`}>
-                                        S/ {parseFloat(summary.saldo_neto || 0).toFixed(2)}
-                                    </h4>
-                                </div>
-                            </div>
+
+            {/* Period Summary KPI */}
+            <h6 className="fw-bold text-dark mb-3">Balance del Periodo Seleccionado</h6>
+            <Row className="mb-4">
+                <Col md={4}>
+                    <Card className="shadow-sm border-0 bg-white">
+                        <Card.Body className="p-3 text-center">
+                            <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Ingresos Totales</small>
+                            <h4 className="mb-0 fw-bold text-success mt-1">S/ {parseFloat(summary.total_ingresos || 0).toFixed(2)}</h4>
                         </Card.Body>
                     </Card>
                 </Col>
+                <Col md={4}>
+                    <Card className="shadow-sm border-0 bg-white">
+                        <Card.Body className="p-3 text-center">
+                            <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Egresos Totales</small>
+                            <h4 className="mb-0 fw-bold text-danger mt-1">S/ {parseFloat(summary.total_egresos || 0).toFixed(2)}</h4>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={4}>
+                    <Card className="shadow-sm border-0 bg-white">
+                        <Card.Body className="p-3 text-center">
+                            <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Saldo Neto</small>
+                            <h4 className={`mb-0 fw-bold mt-1 ${summary.saldo_neto >= 0 ? 'text-primary' : 'text-danger'}`}>
+                                S/ {parseFloat(summary.saldo_neto || 0).toFixed(2)}
+                            </h4>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
 
-                <Col lg={8}>
-                    <Card className="shadow-sm border-0 bg-white rounded-3 h-100">
-                        <Card.Body className="p-4">
-                            <h6 className="fw-bold text-dark mb-3">Filtros de Búsqueda</h6>
-                            <Row className="g-3">
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="small fw-semibold text-muted mb-1">Desde</Form.Label>
+            <Row>
+                {/* Filters Sidebar */}
+                {!sidebarCollapsed && (
+                    <Col lg={3} className="mb-4">
+                        <div className="bg-white p-4 rounded shadow-sm border" style={{ position: 'sticky', top: '20px' }}>
+                            <div className="d-flex justify-content-between align-items-center mb-4">
+                                <div className="d-flex align-items-center gap-2">
+                                    <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>FILTROS</h5>
+                                    <Button
+                                        variant="light"
+                                        size="sm"
+                                        className="p-1 border d-flex align-items-center justify-content-center rounded-circle"
+                                        onClick={() => {
+                                            setSidebarCollapsed(true);
+                                            localStorage.setItem('cashflow_sidebar_collapsed', 'true');
+                                        }}
+                                        title="Ocultar filtros"
+                                    >
+                                        <Icons.ChevronLeft size={14} className="text-muted" />
+                                    </Button>
+                                </div>
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="text-danger fw-bold text-decoration-none p-0"
+                                    onClick={() => {
+                                        setDesde('');
+                                        setHasta('');
+                                        setTipo('all');
+                                        setMetodo('all');
+                                    }}
+                                >
+                                    LIMPIAR
+                                </Button>
+                            </div>
+
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Movimientos diarios</span>
+                                <div className="d-flex justify-content-between gap-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                                    {weekDays.map(day => (
+                                        <button
+                                            key={day.dateStr}
+                                            onClick={() => filterByDay(day.dateStr)}
+                                            className={`btn btn-sm d-flex flex-column align-items-center justify-content-center p-1 rounded-3 ${
+                                                day.isActive ? 'bg-dark text-white shadow border-dark' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
+                                            }`}
+                                            style={{ minHeight: '45px', width: '100%', minWidth: 0, overflow: 'hidden' }}
+                                        >
+                                            <span style={{ fontSize: '7.5px', fontWeight: '800' }}>{day.label}</span>
+                                            <span className="fw-bold" style={{ fontSize: '11px' }}>{day.dayNum}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Rango de Fechas</span>
+                                <Row className="g-2">
+                                    <Col xs={6}>
                                         <Form.Control
                                             type="date"
-                                            className="shadow-none border-light-soft bg-light-soft"
+                                            size="sm"
                                             value={desde}
                                             onChange={(e) => setDesde(e.target.value)}
                                         />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="small fw-semibold text-muted mb-1">Hasta</Form.Label>
+                                    </Col>
+                                    <Col xs={6}>
                                         <Form.Control
                                             type="date"
-                                            className="shadow-none border-light-soft bg-light-soft"
+                                            size="sm"
                                             value={hasta}
                                             onChange={(e) => setHasta(e.target.value)}
                                         />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="small fw-semibold text-muted mb-1">Tipo de Flujo</Form.Label>
-                                        <Form.Select
-                                            className="shadow-none border-light-soft bg-light-soft"
-                                            value={tipo}
-                                            onChange={(e) => setTipo(e.target.value)}
-                                        >
-                                            <option value="all">Todos los flujos</option>
-                                            <option value="Ingreso">Ingresos (+)</option>
-                                            <option value="Egreso">Egresos (-)</option>
-                                        </Form.Select>
-                                    </Form.Group>
-                                </Col>
-                                <Col md={6}>
-                                    <Form.Group>
-                                        <Form.Label className="small fw-semibold text-muted mb-1">Cuenta / Método</Form.Label>
-                                        <Form.Select
-                                            className="shadow-none border-light-soft bg-light-soft"
-                                            value={metodo}
-                                            onChange={(e) => setMetodo(e.target.value)}
-                                        >
-                                            <option value="all">Todos los métodos</option>
-                                            <option value="Transferencia">Transferencia Bancaria</option>
-                                            <option value="Efectivo">Efectivo</option>
-                                            <option value="Yape/Plin">Yape / Plin</option>
-                                        </Form.Select>
-                                    </Form.Group>
-                                </Col>
-                            </Row>
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
+                                    </Col>
+                                </Row>
+                            </div>
 
-            {/* Movements List */}
-            {loading ? (
-                <div className="d-flex justify-content-center align-items-center py-5">
-                    <Spinner animation="border" color="primary" />
-                    <span className="ms-2">Filtrando flujo de caja...</span>
-                </div>
-            ) : (
-                <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white">
-                    <Table hover responsive className="align-middle mb-0">
-                        <thead className="table-light">
-                            <tr>
-                                <th>Fecha / Hora</th>
-                                <th>Tipo</th>
-                                <th>Categoría</th>
-                                <th>Método / Cuenta</th>
-                                <th>Referencia / Detalle</th>
-                                <th>Monto</th>
-                                <th>Responsable</th>
-                                <th className="text-end" style={{ width: '80px' }}>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {movements.map(m => (
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Tipo de Flujo</span>
+                                <Form.Select size="sm" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                                    <option value="all">Todos los flujos</option>
+                                    <option value="Ingreso">Ingresos (+)</option>
+                                    <option value="Egreso">Egresos (-)</option>
+                                </Form.Select>
+                            </div>
+
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Cuenta / Método</span>
+                                <Form.Select size="sm" value={metodo} onChange={(e) => setMetodo(e.target.value)}>
+                                    <option value="all">Todos los métodos</option>
+                                    <option value="Transferencia">Transferencia Bancaria</option>
+                                    <option value="Efectivo">Efectivo</option>
+                                    <option value="Yape/Plin">Yape / Plin</option>
+                                </Form.Select>
+                            </div>
+
+                            {/* Account Balances in Sidebar */}
+                            <div className="mt-4 pt-4 border-top">
+                                <span className="d-block text-muted fw-bold mb-3" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>SALDOS POR CUENTA / MÉTODO</span>
+                                <div className="d-flex flex-column gap-2">
+                                    {balances.map((b, i) => (
+                                        <div key={i} className="p-2 border rounded-3 bg-light-soft d-flex align-items-center">
+                                            <div className="p-2 rounded-circle me-2 bg-white shadow-sm border">
+                                                {b.metodo_pago?.toLowerCase() === 'efectivo' ? <Icons.Cash size={16} className="text-success" /> :
+                                                 b.metodo_pago?.toLowerCase() === 'transferencia' ? <Icons.BuildingBank size={16} className="text-primary" /> :
+                                                 <Icons.DeviceMobile size={16} className="text-info" />}
+                                            </div>
+                                            <div className="w-100">
+                                                <div className="small text-muted fw-semibold" style={{ fontSize: '10px' }}>{b.metodo_pago}</div>
+                                                <div className="d-flex justify-content-between align-items-end mt-1">
+                                                    <span className="fw-extrabold text-dark" style={{ fontSize: '13px' }}>S/ {parseFloat(b.saldo || 0).toFixed(2)}</span>
+                                                    <small className="text-muted" style={{ fontSize: '9px' }}>
+                                                        (+{parseFloat(b.ingresos || 0).toFixed(0)} / -{parseFloat(b.egresos || 0).toFixed(0)})
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {balances.length === 0 && (
+                                        <div className="text-center py-2 text-muted small">No hay saldos registrados aún.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </Col>
+                )}
+
+                {/* Main Content */}
+                <Col lg={sidebarCollapsed ? 12 : 9}>
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                        <div className="d-flex align-items-center gap-2">
+                            {sidebarCollapsed && (
+                                <Button
+                                    variant="light"
+                                    size="sm"
+                                    className="d-flex align-items-center justify-content-center p-2 border rounded-circle shadow-sm"
+                                    onClick={() => {
+                                        setSidebarCollapsed(false);
+                                        localStorage.setItem('cashflow_sidebar_collapsed', 'false');
+                                    }}
+                                    title="Mostrar filtros"
+                                >
+                                    <Icons.Filter size={16} className="text-primary" />
+                                </Button>
+                            )}
+                            <h6 className="fw-bold text-dark mb-0">Listado de Movimientos</h6>
+                        </div>
+                    </div>
+
+                    {/* Movements List */}
+                    {loading ? (
+                        <div className="d-flex justify-content-center align-items-center py-5">
+                            <Spinner animation="border" color="primary" />
+                            <span className="ms-2">Filtrando flujo de caja...</span>
+                        </div>
+                    ) : (
+                        <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white">
+                            <Table hover responsive className="align-middle mb-0 text-nowrap">
+                                <thead className="table-light text-muted font-size-12">
+                                    <tr>
+                                        <th className="ps-3">Fecha / Hora</th>
+                                        <th>Tipo</th>
+                                        <th>Categoría</th>
+                                        <th>Método / Cuenta</th>
+                                        <th>Referencia / Detalle</th>
+                                        <th>Monto</th>
+                                        <th>Responsable</th>
+                                        <th className="text-end pe-3" style={{ width: '80px' }}>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                            {movements.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(m => (
                                 <tr key={m.id} className={m.notas?.includes('ANULADO') ? 'opacity-50 text-decoration-line-through' : ''}>
                                     <td className="small">
                                         {m.fecha ? new Date(m.fecha).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
                                     </td>
                                     <td>
-                                        <Badge bg={m.tipo === 'Ingreso' ? 'success-soft text-success' : 'danger-soft text-danger'} className="border">
-                                            {m.tipo}
+                                        <Badge bg={m.tipo === 'Ingreso' ? 'success text-white' : 'danger text-white'} className="border-0 rounded-pill px-2 py-1">
+                                            {m.tipo === 'Ingreso' ? '● Ingreso' : '○ Egreso'}
                                         </Badge>
                                     </td>
                                     <td>
                                         <div className="fw-bold">{m.categoria}</div>
                                     </td>
                                     <td>
-                                        <Badge bg={getBadgeForMethod(m.metodo_pago)} className="border">
+                                        <Badge bg={getBadgeForMethod(m.metodo_pago)} className="border-0 rounded-pill px-2 py-1">
                                             {m.metodo_pago}
                                         </Badge>
                                     </td>
@@ -354,8 +463,51 @@ export default function CashFlowPage() {
                             )}
                         </tbody>
                     </Table>
+                    {movements.length > 0 && (
+                        <div className="d-flex flex-column flex-md-row justify-content-between align-items-center p-3 border-top bg-light-soft">
+                            <div className="text-muted small mb-2 mb-md-0 fw-semibold">
+                                Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, movements.length)} de {movements.length} movimientos
+                            </div>
+                            <div className="d-flex align-items-center gap-2">
+                                <Form.Select size="sm" style={{ width: '80px' }} value={itemsPerPage} onChange={(e) => {
+                                    setItemsPerPage(Number(e.target.value));
+                                    setCurrentPage(1);
+                                }}>
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </Form.Select>
+                                <div className="btn-group">
+                                    <Button 
+                                        variant="outline-secondary" 
+                                        size="sm" 
+                                        className="fw-bold"
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                    >
+                                        Anterior
+                                    </Button>
+                                    <Button variant="outline-secondary" size="sm" disabled className="fw-bold text-dark">
+                                        {currentPage} / {Math.ceil(movements.length / itemsPerPage)}
+                                    </Button>
+                                    <Button 
+                                        variant="outline-secondary" 
+                                        size="sm" 
+                                        className="fw-bold"
+                                        onClick={() => setCurrentPage(p => Math.min(Math.ceil(movements.length / itemsPerPage), p + 1))}
+                                        disabled={currentPage === Math.ceil(movements.length / itemsPerPage)}
+                                    >
+                                        Siguiente
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </Card>
             )}
+                </Col>
+            </Row>
 
             {/* Manual Movement Modal */}
             <Modal show={showModal} onHide={() => setShowModal(false)} backdrop="static">

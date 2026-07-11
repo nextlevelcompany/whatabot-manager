@@ -47,6 +47,17 @@ export default function ConfigPage() {
     const [activeTab, setActiveTab] = useState('ai_config');
     const [activeNode, setActiveNode] = useState('welcome');
 
+    // Logs States & Ref
+    const [logs, setLogs] = useState([]);
+    const [loadingLogs, setLoadingLogs] = useState(false);
+    const [logLinesCount, setLogLinesCount] = useState(200);
+    const [logsAutoRefresh, setLogsAutoRefresh] = useState(false);
+    const [logsFilter, setLogsFilter] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
+    const logEndRef = React.useRef(null);
+
+
+
     // General Settings States
     const [settings, setSettings] = useState({
         'whatsapp.api.token': '',
@@ -345,6 +356,88 @@ Pago por QR: Escanea el código que te proporcionaremos desde tu móvil.
 
         loadAllData();
     }, []);
+
+    const fetchLogs = async () => {
+        setLoadingLogs(true);
+        try {
+            const res = await fetch(`${API_BASE}/api/admin/logs?lines=${logLinesCount}`);
+            if (res.ok) {
+                const data = await res.json();
+                setLogs(data);
+            } else {
+                setLogs([`Error al obtener logs: Código de respuesta ${res.status}`]);
+            }
+        } catch (err) {
+            setLogs([`Error de conexión al obtener logs: ${err.message}`]);
+        } finally {
+            setLoadingLogs(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'logs') {
+            fetchLogs();
+        }
+    }, [activeTab, logLinesCount]);
+
+    useEffect(() => {
+        let intervalId;
+        if (activeTab === 'logs' && logsAutoRefresh) {
+            intervalId = setInterval(() => {
+                fetchLogs();
+            }, 3000);
+        }
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [activeTab, logsAutoRefresh, logLinesCount]);
+
+    useEffect(() => {
+        if (logEndRef.current && activeTab === 'logs') {
+            logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [logs, activeTab]);
+
+    const filterByCategory = (line, category) => {
+        if (category === 'ALL') return true;
+        const lowerLine = line.toLowerCase();
+        switch (category) {
+            case 'ERROR':
+                return line.includes(' ERROR ') || lowerLine.includes('exception') || lowerLine.includes('error:');
+            case 'WARN':
+                return line.includes(' WARN ');
+            case 'INFO':
+                return line.includes(' INFO ');
+            case 'DEBUG':
+                return line.includes(' DEBUG ');
+            case 'DATABASE':
+                return lowerLine.includes('hibernate') || lowerLine.includes('hikari') || lowerLine.includes('sql') || lowerLine.includes('postgres') || lowerLine.includes('jpa');
+            case 'INTEGRATIONS':
+                return lowerLine.includes('whatsapp') || lowerLine.includes('gemini') || lowerLine.includes('meta') || lowerLine.includes('wspai');
+            case 'SECURITY':
+                return lowerLine.includes('security') || lowerLine.includes('auth') || lowerLine.includes('jwt') || lowerLine.includes('token') || lowerLine.includes('password');
+            default:
+                return true;
+        }
+    };
+
+    const handleCopyLogs = () => {
+        const filtered = logs.filter(line => 
+            line.toLowerCase().includes(logsFilter.toLowerCase()) &&
+            filterByCategory(line, selectedCategory)
+        );
+        navigator.clipboard.writeText(filtered.join('\n'));
+        showAlert('success', 'Logs copiados al portapapeles.');
+    };
+
+    const getLogLineColor = (line) => {
+        if (line.includes(' ERROR ') || line.includes('Exception') || line.includes('Error:')) return '#f87171'; // Rojo
+        if (line.includes(' WARN ')) return '#fbbf24'; // Amarillo
+        if (line.includes(' INFO ')) return '#34d399'; // Verde
+        if (line.includes(' DEBUG ')) return '#60a5fa'; // Azul
+        return '#e2e8f0'; // Gris claro
+    };
+
 
     const showAlert = (type, message) => {
         setAlert({ show: true, type, message });
@@ -1944,6 +2037,179 @@ Pago por QR: Escanea el código que te proporcionaremos desde tu móvil.
                                     )}
                                 </tbody>
                             </Table>
+                        </Card.Body>
+                    </Card>
+                </Tab>
+
+                {/* PESTAÑA 6: LOGS DEL SISTEMA */}
+                <Tab eventKey="logs" title={<span><Icons.FileText size={18} className="me-1" /> Logs del Sistema</span>}>
+                    <Card className="shadow-sm border-0" style={{ borderRadius: '12px' }}>
+                        <Card.Header className="bg-light border-0 py-3 d-flex justify-content-between align-items-center">
+                            <span className="fw-bold">📋 Registros del Servidor (Logs)</span>
+                            <div className="d-flex align-items-center gap-2">
+                                <Form.Check 
+                                    type="switch"
+                                    id="auto-refresh-logs"
+                                    label="Auto-refrescar (3s)"
+                                    checked={logsAutoRefresh}
+                                    onChange={(e) => setLogsAutoRefresh(e.target.checked)}
+                                    className="me-2 small fw-semibold"
+                                />
+                                <Button 
+                                    variant="outline-secondary" 
+                                    size="sm" 
+                                    onClick={handleCopyLogs}
+                                    className="d-flex align-items-center gap-1"
+                                >
+                                    <Icons.Copy size={16} /> Copiar
+                                </Button>
+                                <Button 
+                                    variant="success" 
+                                    size="sm" 
+                                    onClick={fetchLogs} 
+                                    disabled={loadingLogs}
+                                    className="d-flex align-items-center gap-1"
+                                >
+                                    {loadingLogs ? <Spinner size="sm" /> : <Icons.Refresh size={16} />} Refrescar
+                                </Button>
+                            </div>
+                        </Card.Header>
+                        <Card.Body className="p-4">
+                            <Row className="mb-3 g-2">
+                                <Col md={8}>
+                                    <Form.Group>
+                                        <InputGroup>
+                                            <InputGroup.Text className="bg-white border-end-0">
+                                                <Icons.Search size={18} className="text-muted" />
+                                            </InputGroup.Text>
+                                            <Form.Control
+                                                type="text"
+                                                placeholder="Filtrar logs por texto (ej. ERROR, WhatsApp, etc.)..."
+                                                value={logsFilter}
+                                                onChange={(e) => setLogsFilter(e.target.value)}
+                                                className="border-start-0"
+                                            />
+                                            {logsFilter && (
+                                                <Button variant="outline-secondary" onClick={() => setLogsFilter('')}>
+                                                    Limpiar
+                                                </Button>
+                                            )}
+                                        </InputGroup>
+                                    </Form.Group>
+                                </Col>
+                                <Col md={4}>
+                                    <Form.Group className="d-flex align-items-center gap-2">
+                                        <Form.Label className="mb-0 text-nowrap small fw-semibold">Líneas a mostrar:</Form.Label>
+                                        <Form.Select 
+                                            value={logLinesCount} 
+                                            onChange={(e) => setLogLinesCount(parseInt(e.target.value))}
+                                            size="sm"
+                                        >
+                                            <option value="50">50 líneas</option>
+                                            <option value="100">100 líneas</option>
+                                            <option value="200">200 líneas</option>
+                                            <option value="500">500 líneas</option>
+                                            <option value="1000">1000 líneas</option>
+                                        </Form.Select>
+                                    </Form.Group>
+                                </Col>
+                            </Row>
+
+                            {/* Píldoras de Categorías */}
+                            <div className="d-flex flex-wrap gap-2 mb-3">
+                                <Button 
+                                    variant={selectedCategory === 'ALL' ? 'primary' : 'outline-secondary'} 
+                                    size="sm" 
+                                    onClick={() => setSelectedCategory('ALL')}
+                                    style={{ borderRadius: '20px', fontSize: '0.8rem' }}
+                                >
+                                    Todos ({logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase())).length})
+                                </Button>
+                                <Button 
+                                    variant={selectedCategory === 'ERROR' ? 'danger' : 'outline-danger'} 
+                                    size="sm" 
+                                    onClick={() => setSelectedCategory('ERROR')}
+                                    style={{ borderRadius: '20px', fontSize: '0.8rem' }}
+                                >
+                                    🔴 Errores ({logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, 'ERROR')).length})
+                                </Button>
+                                <Button 
+                                    variant={selectedCategory === 'WARN' ? 'warning' : 'outline-warning'} 
+                                    size="sm" 
+                                    onClick={() => setSelectedCategory('WARN')}
+                                    style={{ borderRadius: '20px', fontSize: '0.8rem' }}
+                                >
+                                    🟡 Advertencias ({logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, 'WARN')).length})
+                                </Button>
+                                <Button 
+                                    variant={selectedCategory === 'DATABASE' ? 'info' : 'outline-info'} 
+                                    size="sm" 
+                                    onClick={() => setSelectedCategory('DATABASE')}
+                                    style={{ borderRadius: '20px', fontSize: '0.8rem' }}
+                                >
+                                    💾 Base de Datos ({logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, 'DATABASE')).length})
+                                </Button>
+                                <Button 
+                                    variant={selectedCategory === 'INTEGRATIONS' ? 'success' : 'outline-success'} 
+                                    size="sm" 
+                                    onClick={() => setSelectedCategory('INTEGRATIONS')}
+                                    style={{ borderRadius: '20px', fontSize: '0.8rem' }}
+                                >
+                                    💬 WhatsApp & IA ({logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, 'INTEGRATIONS')).length})
+                                </Button>
+                                <Button 
+                                    variant={selectedCategory === 'SECURITY' ? 'dark' : 'outline-dark'} 
+                                    size="sm" 
+                                    onClick={() => setSelectedCategory('SECURITY')}
+                                    style={{ borderRadius: '20px', fontSize: '0.8rem' }}
+                                >
+                                    🔒 Seguridad ({logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, 'SECURITY')).length})
+                                </Button>
+                            </div>
+
+                            <div 
+                                style={{ 
+                                    backgroundColor: '#0f172a', 
+                                    borderRadius: '8px', 
+                                    padding: '16px', 
+                                    maxHeight: '550px', 
+                                    overflowY: 'auto', 
+                                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.6)'
+                                }}
+                            >
+                                {logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, selectedCategory)).length > 0 ? (
+                                    logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, selectedCategory)).map((line, idx) => (
+                                        <div 
+                                            key={idx} 
+                                            style={{ 
+                                                color: getLogLineColor(line), 
+                                                whiteSpace: 'pre-wrap', 
+                                                wordBreak: 'break-all', 
+                                                fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace', 
+                                                fontSize: '0.82rem', 
+                                                marginBottom: '4px',
+                                                borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                                paddingBottom: '2px'
+                                            }}
+                                        >
+                                            {line}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center text-muted py-5">
+                                        {logs.length === 0 ? 'Cargando logs del servidor o archivo no disponible...' : 'No hay líneas de log que coincidan con el filtro seleccionado.'}
+                                    </div>
+                                )}
+                                <div ref={logEndRef} />
+                            </div>
+                            <div className="d-flex justify-content-between align-items-center mt-2">
+                                <span className="small text-muted">
+                                    Mostrando {logs.filter(line => line.toLowerCase().includes(logsFilter.toLowerCase()) && filterByCategory(line, selectedCategory)).length} de {logs.length} líneas de log disponibles.
+                                </span>
+                                <span className="small text-muted">
+                                    Ubicación en contenedor: <code>/app/logs/nextlead.log</code>
+                                </span>
+                            </div>
                         </Card.Body>
                     </Card>
                 </Tab>

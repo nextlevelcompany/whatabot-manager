@@ -171,10 +171,6 @@ export const SidebarMenu = [
                     {
                         name: 'Gastos Recurrentes',
                         path: '/finanzas/recurring-expenses',
-                    },
-                    {
-                        name: 'Catálogo de Cuentas',
-                        path: '/finanzas/accounts-catalog',
                     }
                 ]
             },

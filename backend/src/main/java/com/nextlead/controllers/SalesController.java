@@ -412,7 +412,7 @@ public class SalesController {
 
             // Sync to Orders table if linked
             String orderPayment = "pagado".equalsIgnoreCase(req.estado_pago) ? "Pagado" : ("parcial".equalsIgnoreCase(req.estado_pago) ? "Parcial" : "Pendiente");
-            jdbcTemplate.update("UPDATE pedidos SET estado_pago = ? WHERE venta_id = ?", orderPayment, req.id);
+            jdbcTemplate.update("UPDATE pedidos SET estado_pago = ?, venta_estado = ? WHERE venta_id = ?", orderPayment, nuevoEstado, req.id);
 
             // Stock Management
             if (req.entrega_ok != null && req.entrega_ok && !alreadyDelivered) {
@@ -480,7 +480,7 @@ public class SalesController {
             } catch (Exception ignored) {}
 
             jdbcTemplate.update(
-                "UPDATE pedidos SET etapa_id = ?, estado_pago = 'Pendiente', envases_entregados = 0, envases_devueltos = 0, notas = CONCAT('⚠️ VENTA ANULADA: ', ?, '\\n', COALESCE(notas,'')) WHERE venta_id = ?",
+                "UPDATE pedidos SET etapa_id = ?, estado_pago = 'Pendiente', venta_estado = 'cancelada', envases_entregados = 0, envases_devueltos = 0, notas = CONCAT('🚨 VENTA ANULADA: ', ?, '\n', COALESCE(notas,'')) WHERE venta_id = ?",
                 lostStageId, req.motivo, req.id
             );
 

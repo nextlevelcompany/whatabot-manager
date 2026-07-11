@@ -1170,30 +1170,30 @@ export default function PedidosViewPage() {
                     </InputGroup>
                 </div>
                 <div className="d-flex gap-2 align-items-center">
-                    <div className="btn-group bg-light border rounded p-1" style={{ height: '40px' }}>
+                    <div className="btn-group bg-light border rounded p-1">
                         <Button
-                            variant={viewMode === 'kanban' ? 'primary' : 'light'}
+                            variant={viewMode === 'kanban' ? 'dark' : 'light'}
                             size="sm"
-                            className="fw-bold px-3 border-0"
+                            className={`fw-bold px-3 border-0 ${viewMode === 'kanban' ? 'text-white' : 'text-muted'}`}
                             onClick={() => setViewMode('kanban')}
                         >
-                            KANBAN
+                            <Grid size={16} />
                         </Button>
                         <Button
-                            variant={viewMode === 'list' ? 'primary' : 'light'}
+                            variant={viewMode === 'list' ? 'dark' : 'light'}
                             size="sm"
-                            className="fw-bold px-3 border-0"
+                            className={`fw-bold px-3 border-0 ${viewMode === 'list' ? 'text-white' : 'text-muted'}`}
                             onClick={() => setViewMode('list')}
                         >
-                            LISTA
+                            <List size={16} />
                         </Button>
                         <Button
-                            variant={viewMode === 'map' ? 'primary' : 'light'}
+                            variant={viewMode === 'map' ? 'dark' : 'light'}
                             size="sm"
-                            className="fw-bold px-3 border-0"
+                            className={`fw-bold px-3 border-0 ${viewMode === 'map' ? 'text-white' : 'text-muted'}`}
                             onClick={() => setViewMode('map')}
                         >
-                            <Map size={14} className="me-1" /> MAPA
+                            <Map size={16} />
                         </Button>
                     </div>
                     <Button 
@@ -1335,7 +1335,7 @@ export default function PedidosViewPage() {
                                                 key={day.dateStr}
                                                 onClick={() => filterByDay(day.dateStr)}
                                                 className={`btn btn-sm d-flex flex-column align-items-center justify-content-center p-1 rounded-3 ${
-                                                    day.isActive ? 'btn-primary' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
+                                                    day.isActive ? 'bg-dark text-white shadow border-dark' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
                                                 }`}
                                                 style={{ minHeight: '56px', width: '100%', minWidth: 0, overflow: 'hidden' }}
                                             >
@@ -1347,7 +1347,7 @@ export default function PedidosViewPage() {
                                                         height: '14px', 
                                                         fontSize: '6.5px',
                                                         backgroundColor: day.isActive ? '#ffffff' : '#0d6efd',
-                                                        color: day.isActive ? '#0d6efd' : '#ffffff'
+                                                        color: day.isActive ? '#212529' : '#ffffff'
                                                     }}>
                                                         {day.pendingCount}
                                                     </span>
@@ -1474,7 +1474,7 @@ export default function PedidosViewPage() {
 
                                                 <div style={{ minHeight: '150px' }}>
                                                     {colOrders.map(order => {
-                                                        const isLocked = col.es_perdido == 1 || (order.venta_id && (order.venta_estado === 'completada' || order.venta_estado === 'cancelada'));
+                                                        const isLocked = col.es_perdido == 1 || (order.venta_id && (order.venta_estado === 'completada' || order.venta_estado === 'cancelada' || (order.venta_estado === 'entregado' && order.estado_pago === 'Pagado')));
                                                         const dColor = getDriverColor(order.chofer_n);
                                                         const priorityColors = {
                                                             Alta: '#ef4444', 
@@ -1742,8 +1742,8 @@ export default function PedidosViewPage() {
                                                              <td className="text-end pe-3">
                                                                  <div className="d-inline-flex gap-1">
                                                                      <Button 
-                                                                         variant="flush-dark" 
-                                                                         className="btn-icon btn-rounded flush-soft-hover" 
+                                                                         variant="light" 
+                                                                         className="btn-icon btn-rounded border-0" 
                                                                          title="Enviar WhatsApp"
                                                                          onClick={() => shareOrderWhatsapp(order)}
                                                                          style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
@@ -1751,10 +1751,10 @@ export default function PedidosViewPage() {
                                                                          <Send size={14} className="text-success" />
                                                                      </Button>
                                                                      <Button 
-                                                                         variant="flush-dark" 
+                                                                         variant="light" 
                                                                          as="a"
                                                                          href={`/pedidos/create?edit_id=${order.id}`}
-                                                                         className="btn-icon btn-rounded flush-soft-hover" 
+                                                                         className="btn-icon btn-rounded border-0" 
                                                                          title="Editar"
                                                                          style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
                                                                      >
@@ -1762,13 +1762,13 @@ export default function PedidosViewPage() {
                                                                      </Button>
                                                                      {order.venta_estado !== 'cancelada' && (
                                                                          <Button 
-                                                                             variant="flush-dark" 
-                                                                             className="btn-icon btn-rounded flush-soft-hover text-danger" 
+                                                                             variant="light" 
+                                                                             className="btn-icon btn-rounded border-0" 
                                                                              title="Eliminar"
                                                                              onClick={() => deleteOrder(order.id)}
                                                                              style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}
                                                                          >
-                                                                             <Trash size={14} />
+                                                                             <Trash size={14} className="text-danger" />
                                                                          </Button>
                                                                      )}
                                                                  </div>

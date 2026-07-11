@@ -22,6 +22,10 @@ export default function PurchasesPage() {
     const [igvPercentage, setIgvPercentage] = useState(18);
     const [loading, setLoading] = useState(true);
 
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+
     // Purchase Modals
     const [showModal, setShowModal] = useState(false);
     const [showDetails, setShowDetails] = useState(false);
@@ -284,8 +288,8 @@ export default function PurchasesPage() {
                 </div>
             ) : (
                 <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white">
-                    <Table hover responsive className="align-middle mb-0">
-                        <thead className="table-light">
+                    <Table hover responsive className="align-middle mb-0 text-nowrap">
+                        <thead className="table-light text-muted font-size-12">
                             <tr>
                                 <th>Nro Compra</th>
                                 <th>Fecha</th>
@@ -297,28 +301,42 @@ export default function PurchasesPage() {
                                 <th className="text-end">Acciones</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {purchases.map(p => (
+                        <tbody className="font-size-13">
+                            {purchases.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(p => {
+                                const initials = p.proveedor_nombre ? p.proveedor_nombre.substring(0, 2).toUpperCase() : '?';
+                                const colors = ['primary', 'info', 'success', 'warning', 'danger', 'violet'];
+                                const avtBg = colors[(p.id || 0) % colors.length];
+                                
+                                return (
                                 <tr key={p.id}>
-                                    <td>
-                                        <Badge bg="light" className="text-primary border border-light fw-bold px-2 py-1" style={{ fontSize: '11px' }}>
-                                            📦 {p.numero_compra}
-                                        </Badge>
+                                    <td className="ps-3">
+                                        <strong className="text-dark" style={{ fontSize: '13px' }}>{p.numero_compra}</strong>
                                     </td>
                                     <td>
-                                        <div className="fw-bold text-dark">{p.fecha_compra ? p.fecha_compra.split('T')[0].split('-').reverse().join('/') : ''}</div>
-                                    </td>
-                                    <td>{p.proveedor_nombre}</td>
-                                    <td style={{ maxWidth: '250px' }} className="text-truncate" title={p.productos_detalle}>
-                                        <small className="text-muted">{p.productos_detalle || 'Sin productos'}</small>
-                                    </td>
-                                    <td>S/ {parseFloat(p.subtotal || 0).toFixed(2)}</td>
-                                    <td>
-                                        <span className="fw-extrabold text-dark">S/ {parseFloat(p.total || 0).toFixed(2)}</span>
+                                        <span className="small text-muted">{p.fecha_compra ? p.fecha_compra.split('T')[0].split('-').reverse().join('/') : ''}</span>
                                     </td>
                                     <td>
-                                        <Badge bg={p.estado === 'recibida' ? 'success-soft text-success' : 'warning-soft text-warning'} className="border">
-                                            {p.estado === 'recibida' ? 'Recibida en Almacén' : 'Borrador / Pendiente'}
+                                        <div className="d-flex align-items-center">
+                                            <div className="me-2">
+                                                <div className={`avatar avatar-xs avatar-rounded bg-soft-${avtBg} text-${avtBg} d-flex align-items-center justify-content-center fw-bold`} style={{ width: '32px', height: '32px', fontSize: '11px', borderRadius: '50%' }}>
+                                                    {initials}
+                                                </div>
+                                            </div>
+                                            <div className="fw-semibold text-dark text-high-em" style={{ fontSize: '13px' }}>{p.proveedor_nombre}</div>
+                                        </div>
+                                    </td>
+                                    <td style={{ maxWidth: '200px' }}>
+                                        <span className="text-muted small text-wrap d-block text-truncate" style={{ fontSize: '12px', lineHeight: '1.4' }} title={p.productos_detalle}>
+                                            {p.productos_detalle || 'Sin productos'}
+                                        </span>
+                                    </td>
+                                    <td><span className="text-muted">S/ {parseFloat(p.subtotal || 0).toFixed(2)}</span></td>
+                                    <td>
+                                        <span className="fw-bold text-primary">S/ {parseFloat(p.total || 0).toFixed(2)}</span>
+                                    </td>
+                                    <td>
+                                        <Badge bg={p.estado === 'recibida' ? 'success text-white' : 'warning text-dark'} className="border-0 rounded-pill px-2 py-1">
+                                            {p.estado === 'recibida' ? '● Recibida en Almacén' : '○ Borrador / Pendiente'}
                                         </Badge>
                                     </td>
                                     <td className="text-end">
@@ -337,7 +355,8 @@ export default function PurchasesPage() {
                                         )}
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                             {purchases.length === 0 && (
                                 <tr>
                                     <td colSpan={8} className="text-center py-4 text-muted">No se encontraron compras de almacén registradas.</td>
@@ -345,6 +364,47 @@ export default function PurchasesPage() {
                             )}
                         </tbody>
                     </Table>
+                    {purchases.length > 0 && (
+                        <div className="d-flex flex-column flex-md-row justify-content-between align-items-center p-3 border-top bg-light-soft">
+                            <div className="text-muted small mb-2 mb-md-0 fw-semibold">
+                                Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, purchases.length)} de {purchases.length} compras
+                            </div>
+                            <div className="d-flex align-items-center gap-2">
+                                <Form.Select size="sm" style={{ width: '80px' }} value={itemsPerPage} onChange={(e) => {
+                                    setItemsPerPage(Number(e.target.value));
+                                    setCurrentPage(1);
+                                }}>
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </Form.Select>
+                                <div className="btn-group">
+                                    <Button 
+                                        variant="outline-secondary" 
+                                        size="sm" 
+                                        className="fw-bold"
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                    >
+                                        Anterior
+                                    </Button>
+                                    <Button variant="outline-secondary" size="sm" disabled className="fw-bold text-dark">
+                                        {currentPage} / {Math.ceil(purchases.length / itemsPerPage)}
+                                    </Button>
+                                    <Button 
+                                        variant="outline-secondary" 
+                                        size="sm" 
+                                        className="fw-bold"
+                                        onClick={() => setCurrentPage(p => Math.min(Math.ceil(purchases.length / itemsPerPage), p + 1))}
+                                        disabled={currentPage === Math.ceil(purchases.length / itemsPerPage)}
+                                    >
+                                        Siguiente
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </Card>
             )}
 
@@ -473,8 +533,8 @@ export default function PurchasesPage() {
                         </Card>
 
                         {/* Items Table */}
-                        <Table responsive hover className="align-middle mb-4 border rounded-3 bg-white">
-                            <thead className="table-light">
+                        <Table responsive hover className="align-middle mb-4 border rounded-3 bg-white text-nowrap">
+                            <thead className="table-light text-muted font-size-12">
                                 <tr>
                                     <th>Cód</th>
                                     <th>Producto</th>
@@ -594,8 +654,8 @@ export default function PurchasesPage() {
                                 )}
                             </Row>
 
-                            <Table responsive hover className="align-middle mb-4 border rounded-3 bg-white">
-                                <thead className="table-light">
+                            <Table responsive hover className="align-middle mb-4 border rounded-3 bg-white text-nowrap">
+                                <thead className="table-light text-muted font-size-12">
                                     <tr>
                                         <th>Cód</th>
                                         <th>Producto</th>

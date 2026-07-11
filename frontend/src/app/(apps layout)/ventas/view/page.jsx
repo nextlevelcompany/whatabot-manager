@@ -1,9 +1,10 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { Row, Col, Card, Form, Button, Table, Badge, Dropdown, Spinner, InputGroup, Modal } from 'react-bootstrap';
-import { Search, Map, Settings, Trash, Edit, Plus, RefreshCw, Calendar, DollarSign, List, Grid, Check, X, Eye, Save } from 'react-feather';
+import { Search, Map, Settings, Trash, Edit, Plus, RefreshCw, Calendar, DollarSign, List, Grid, Check, X, Eye, Save, MapPin, Package, Clock, Download } from 'react-feather';
 import Swal from 'sweetalert2';
 import SimpleBar from 'simplebar-react';
+import Link from 'next/link';
 
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
@@ -234,45 +235,22 @@ export default function SalesViewPage() {
         }
     };
 
-    const handleDeleteSale = (id, num) => {
-        Swal.fire({
-            title: '¿Eliminar Venta?',
-            text: `Se borrará permanentemente la venta ${num} y se restaurarán los inventarios y envases.`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            confirmButtonText: 'Eliminar'
-        }).then(async (result) => {
-            if (result.isConfirmed) {
-                try {
-                    const res = await fetch(`${API_BASE}/api/sales/${id}`, { method: 'DELETE' });
-                    if (res.ok) {
-                        loadSales();
-                        Swal.fire('Eliminada', 'Venta borrada con éxito.', 'success');
-                    }
-                } catch (e) {
-                    Swal.fire('Error', 'No se pudo eliminar.', 'error');
-                }
-            }
-        });
-    };
-
     const handleOpenView = (sale) => {
         setSelectedSale(sale);
         setShowViewModal(true);
     };
 
     const getEstadoBadge = (est) => {
-        if (est === 'completada') return <span className="badge bg-soft-success text-success border border-success-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>● Completada</span>;
-        if (est === 'cancelada') return <span className="badge bg-soft-danger text-danger border border-danger-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Anulada</span>;
-        if (est === 'entregado') return <span className="badge bg-soft-info text-info border border-info-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Entregado</span>;
-        return <span className="badge bg-soft-warning text-warning border border-warning-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Pendiente</span>;
+        if (est === 'completada') return <span className="badge bg-success text-white rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>● Completada</span>;
+        if (est === 'cancelada') return <span className="badge bg-danger text-white rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Anulada</span>;
+        if (est === 'entregado') return <span className="badge bg-info text-white rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Entregado</span>;
+        return <span className="badge bg-warning text-dark rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Pendiente</span>;
     };
 
     const getPagoBadge = (pago) => {
-        if (pago === 'pagado') return <span className="badge bg-soft-success text-success border border-success-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>● Pagado</span>;
-        if (pago === 'parcial') return <span className="badge bg-soft-warning text-warning border border-warning-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>◐ Parcial</span>;
-        return <span className="badge bg-soft-danger text-danger border border-danger-soft rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Pendiente</span>;
+        if (pago === 'pagado') return <span className="badge bg-success text-white rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>● Pagado</span>;
+        if (pago === 'parcial') return <span className="badge bg-warning text-dark rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>◐ Parcial</span>;
+        return <span className="badge bg-danger text-white rounded-pill" style={{ fontSize: '11px', fontWeight: '600', padding: '4px 8px' }}>○ Pendiente</span>;
     };
 
     return (
@@ -315,24 +293,42 @@ export default function SalesViewPage() {
                 <div className="d-flex gap-2 align-items-center">
                     <div className="btn-group bg-light border rounded p-1">
                         <Button
-                            variant={viewMode === 'kanban' ? 'primary' : 'light'}
+                            variant={viewMode === 'kanban' ? 'dark' : 'light'}
                             size="sm"
-                            className="fw-bold px-3 border-0"
+                            className={`fw-bold px-3 border-0 ${viewMode === 'kanban' ? 'text-white' : 'text-muted'}`}
                             onClick={() => setViewMode('kanban')}
                         >
-                            KANBAN
+                            <Grid size={16} />
                         </Button>
                         <Button
-                            variant={viewMode === 'list' ? 'primary' : 'light'}
+                            variant={viewMode === 'list' ? 'dark' : 'light'}
                             size="sm"
-                            className="fw-bold px-3 border-0"
+                            className={`fw-bold px-3 border-0 ${viewMode === 'list' ? 'text-white' : 'text-muted'}`}
                             onClick={() => setViewMode('list')}
                         >
-                            LISTA
+                            <List size={16} />
                         </Button>
                     </div>
-                    <Button variant="primary" size="sm" className="fw-bold px-3 d-inline-flex align-items-center justify-content-center" href="/ventas/create">
-                        <Plus size={16} className="me-1" /> NUEVO
+                    <Button 
+                        variant="success" 
+                        size="sm"
+                        className="fw-bold d-inline-flex align-items-center justify-content-center bg-success text-white border-0 px-3" 
+                        onClick={() => {}}
+                        title="Exportar a Excel"
+                    >
+                        <Download size={16} />
+                    </Button>
+                    <Button 
+                        variant="light" 
+                        size="sm"
+                        className="fw-bold d-inline-flex align-items-center justify-content-center border me-2 px-3" 
+                        onClick={() => {}}
+                        title="Configurar vista"
+                    >
+                        <Settings size={16} />
+                    </Button>
+                    <Button variant="primary" size="sm" className="fw-bold px-3 d-inline-flex align-items-center justify-content-center text-white" href="/ventas/create">
+                        <Plus size={16} />
                     </Button>
                 </div>
             </div>
@@ -406,7 +402,7 @@ export default function SalesViewPage() {
                                             key={day.dateStr}
                                             onClick={() => filterByDay(day.dateStr)}
                                             className={`btn btn-sm d-flex flex-column align-items-center justify-content-center p-1 rounded-3 ${
-                                                day.isActive ? 'btn-primary' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
+                                                day.isActive ? 'bg-dark text-white shadow border-dark' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
                                             }`}
                                             style={{ minHeight: '56px', width: '100%', minWidth: 0, overflow: 'hidden' }}
                                         >
@@ -418,7 +414,7 @@ export default function SalesViewPage() {
                                                     height: '14px', 
                                                     fontSize: '6.5px',
                                                     backgroundColor: day.isActive ? '#ffffff' : '#0d6efd',
-                                                    color: day.isActive ? '#0d6efd' : '#ffffff'
+                                                    color: day.isActive ? '#212529' : '#ffffff'
                                                 }}>
                                                     {day.pendingCount}
                                                 </span>
@@ -519,12 +515,18 @@ export default function SalesViewPage() {
                                             completada: 'COMPLETADA',
                                             cancelada: 'ANULADA / DEVUELTA'
                                         };
+                                        const stageColors = {
+                                            pendiente: '#f59e0b', // warning
+                                            entregado: '#0ea5e9', // info
+                                            completada: '#10b981', // success
+                                            cancelada: '#ef4444' // danger
+                                        };
 
                                         return (
                                             <div
                                                 key={stage}
-                                                className="bg-light rounded-3 border p-3 flex-shrink-0"
-                                                style={{ width: '300px', minHeight: '300px' }}
+                                                className="bg-light rounded-3 border p-3 flex-shrink-0 shadow-sm"
+                                                style={{ width: '300px', minHeight: '300px', borderTop: `4px solid ${stageColors[stage]}` }}
                                             >
                                                 <div className="d-flex justify-content-between align-items-center mb-3">
                                                     <span className="fw-bold text-dark small text-uppercase" style={{ letterSpacing: '0.05em' }}>
@@ -559,19 +561,43 @@ export default function SalesViewPage() {
                                                             >
                                                                 <Card.Body className="p-3">
                                                                     <div className="d-flex justify-content-between align-items-center mb-2">
-                                                                        <div className="d-flex align-items-center gap-2">
-                                                                            <span className="fw-bold text-dark font-size-13">{sale.numero_venta}</span>
+                                                                        <Badge bg="light" className="text-muted border fw-bold px-2 py-1 shadow-none" style={{ fontSize: '10px', borderRadius: '4px' }}>
+                                                                            📄 {sale.numero_venta}
+                                                                        </Badge>
+                                                                        <div className="d-flex gap-1 align-items-center">
                                                                             {getEstadoBadge(sale.estado)}
                                                                         </div>
-                                                                        <span className="small text-muted">{formatDateSafe(sale.fecha_venta)}</span>
                                                                     </div>
 
-                                                                    <div className="fw-bold text-dark font-size-13 mb-1 text-truncate" style={{ maxWidth: '240px' }}>
-                                                                        {sale.cliente_nombre_completo || 'Cliente General'}
+                                                                    <div className="fw-extrabold mb-2" style={{ fontSize: '14px', letterSpacing: '-0.01em' }}>
+                                                                        {sale.contacto_id ? (
+                                                                            <Link 
+                                                                                href={`/apps/contact/view-contact?id=${sale.contacto_id}`} 
+                                                                                className="text-dark text-decoration-none transition-all"
+                                                                                style={{ cursor: 'pointer' }}
+                                                                                onMouseEnter={(e) => e.target.style.color = '#0d6efd'}
+                                                                                onMouseLeave={(e) => e.target.style.color = '#212529'}
+                                                                            >
+                                                                                {sale.cliente_nombre_completo || 'Cliente General'}
+                                                                            </Link>
+                                                                        ) : (
+                                                                            sale.cliente_nombre_completo || 'Cliente General'
+                                                                        )}
+                                                                    </div>
+
+                                                                    <div className="d-flex align-items-center gap-2 text-muted mb-1" style={{ fontSize: '11.5px' }} title={sale.direccion_entrega || "Sin dirección"}>
+                                                                        <MapPin size={12} className={sale.direccion_entrega && sale.direccion_entrega !== '-' && sale.direccion_entrega !== 'undefined' ? "text-success" : "text-muted"} />
+                                                                        <span className="text-truncate" style={{ maxWidth: '210px' }}>{sale.direccion_entrega && sale.direccion_entrega !== '-' && sale.direccion_entrega !== 'undefined' ? sale.direccion_entrega : 'Recojo en tienda'}</span>
+                                                                    </div>
+
+                                                                    <div className="d-flex align-items-center gap-2 text-muted mb-1" style={{ fontSize: '11.5px' }}>
+                                                                        <Calendar size={12} className="text-primary" />
+                                                                        <span>Fecha: <strong className="text-dark">{formatDateSafe(sale.fecha_venta)}</strong></span>
                                                                     </div>
                                                                     
-                                                                    <div className="text-muted small mb-2 text-truncate" style={{ maxWidth: '240px' }} title={sale.productos_detalle}>
-                                                                        📦 {sale.productos_detalle || 'Sin productos'}
+                                                                    <div className="d-flex align-items-center gap-2 text-muted mb-3 text-truncate" style={{ fontSize: '11.5px', maxWidth: '240px' }} title={sale.productos_detalle}>
+                                                                        <Package size={12} className="text-secondary" />
+                                                                        <span className="text-truncate">{sale.productos_detalle || 'Sin productos'}</span>
                                                                     </div>
 
                                                                     <div className="d-flex justify-content-between align-items-center mt-2 border-top pt-2">
@@ -586,22 +612,20 @@ export default function SalesViewPage() {
                                                                     </div>
 
                                                                     <div className="d-flex align-items-center justify-content-end gap-1 mt-3 pt-2 border-top">
-                                                                        <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Detalle" onClick={() => handleOpenView(sale)}>
-                                                                            <Eye size={14} className="text-muted" />
+                                                                        <Button variant="link" className="p-1 text-muted hover-bg rounded-circle" title="Detalle" onClick={() => handleOpenView(sale)}>
+                                                                            <Eye size={16} />
                                                                         </Button>
                                                                         {!isLocked && (
                                                                             <>
-                                                                                <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Validar / Cobrar" onClick={() => handleOpenValidate(sale)}>
-                                                                                    <Check size={14} className="text-success" />
+                                                                                <Button variant="link" className="p-1 text-success hover-bg rounded-circle" title="Validar / Cobrar" onClick={() => handleOpenValidate(sale)}>
+                                                                                    <Check size={16} />
                                                                                 </Button>
-                                                                                <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Anular" onClick={() => handleOpenCancel(sale)}>
-                                                                                    <X size={14} className="text-warning-dark" />
+                                                                                <Button variant="link" className="p-1 text-danger hover-bg rounded-circle" title="Anular" onClick={() => handleOpenCancel(sale)}>
+                                                                                    <X size={16} />
                                                                                 </Button>
                                                                             </>
                                                                         )}
-                                                                        <Button variant="flush-dark" className="btn-icon btn-rounded p-1 shadow-none border-0" title="Eliminar" onClick={() => handleDeleteSale(sale.id, sale.numero_venta)}>
-                                                                            <Trash size={14} className="text-danger" />
-                                                                        </Button>
+
                                                                     </div>
                                                                 </Card.Body>
                                                             </Card>
@@ -670,22 +694,20 @@ export default function SalesViewPage() {
                                                         <td>{getPagoBadge(row.estado_pago)}</td>
                                                         <td className="text-end pe-3">
                                                             <div className="d-inline-flex gap-1">
-                                                                <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover" title="Detalle" onClick={() => handleOpenView(row)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
-                                                                    <Eye size={14} className="text-info" />
+                                                                <Button variant="link" className="p-1 text-info hover-bg rounded-circle" title="Detalle" onClick={() => handleOpenView(row)}>
+                                                                    <Eye size={16} />
                                                                 </Button>
                                                                 {row.estado !== 'cancelada' && (
                                                                     <>
-                                                                        <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover" title="Validar / Cobrar" onClick={() => handleOpenValidate(row)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
-                                                                            <Check size={14} className="text-success" />
+                                                                        <Button variant="link" className="p-1 text-success hover-bg rounded-circle" title="Validar / Cobrar" onClick={() => handleOpenValidate(row)}>
+                                                                            <Check size={16} />
                                                                         </Button>
-                                                                        <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover text-warning-dark" title="Anular" onClick={() => handleOpenCancel(row)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
-                                                                            <X size={14} />
+                                                                        <Button variant="link" className="p-1 text-danger hover-bg rounded-circle" title="Anular" onClick={() => handleOpenCancel(row)}>
+                                                                            <X size={16} />
                                                                         </Button>
                                                                     </>
                                                                 )}
-                                                                <Button variant="flush-dark" className="btn-icon btn-rounded flush-soft-hover text-danger" title="Eliminar" onClick={() => handleDeleteSale(row.id, row.numero_venta)} style={{ width: '32px', height: '32px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
-                                                                    <Trash size={14} />
-                                                                </Button>
+
                                                             </div>
                                                         </td>
                                                     </tr>

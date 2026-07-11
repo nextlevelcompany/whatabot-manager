@@ -24,6 +24,68 @@ export default function ExpensesPage() {
     const [summary, setSummary] = useState({ total_mes: 0, total_pendiente: 0 });
     const [activeKey, setActiveKey] = useState('expenses');
 
+    // Filters
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [filterDesde, setFilterDesde] = useState('');
+    const [filterHasta, setFilterHasta] = useState('');
+    const [filterMetodo, setFilterMetodo] = useState('all');
+    const [filterEstado, setFilterEstado] = useState('all');
+
+    useEffect(() => {
+        const saved = localStorage.getItem('expenses_sidebar_collapsed');
+        if (saved) setSidebarCollapsed(saved === 'true');
+    }, []);
+
+    const getLocalDateString = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    const filterByDay = (dateStr) => {
+        setFilterDesde(filterDesde === dateStr ? '' : dateStr);
+        setFilterHasta(filterHasta === dateStr ? '' : dateStr);
+        setCurrentPage(1);
+    };
+
+    const getWeekDays = () => {
+        const list = [];
+        const days = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+        const now = new Date();
+        now.setHours(12, 0, 0, 0); 
+        const start = new Date(now);
+        start.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(start);
+            d.setDate(start.getDate() + i);
+            const dateStr = getLocalDateString(d);
+            const label = days[d.getDay()];
+            const dayNum = d.getDate();
+            const isToday = dateStr === getLocalDateString(now);
+            const isActive = filterDesde === dateStr && filterHasta === dateStr;
+
+            list.push({ dateStr, label, dayNum, isToday, isActive });
+        }
+        return list;
+    };
+
+    const weekDays = getWeekDays();
+
+    // Local Filtering for Expenses
+    const filteredExpenses = expenses.filter(e => {
+        if (filterDesde && e.fecha_gasto < filterDesde) return false;
+        if (filterHasta && e.fecha_gasto > filterHasta + 'T23:59:59') return false;
+        if (filterEstado !== 'all' && e.estado_pago !== filterEstado) return false;
+        if (filterMetodo !== 'all' && e.metodo_pago !== filterMetodo) return false;
+        return true;
+    });
+
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+
     // Expense Form Modal
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -295,7 +357,129 @@ export default function ExpensesPage() {
                 </Col>
             </Row>
 
-            {/* Navigation Tabs */}
+            <Row>
+                {/* Filters Sidebar */}
+                {!sidebarCollapsed && (
+                    <Col lg={3} className="mb-4">
+                        <div className="bg-white p-4 rounded shadow-sm border" style={{ position: 'sticky', top: '20px' }}>
+                            <div className="d-flex justify-content-between align-items-center mb-4">
+                                <div className="d-flex align-items-center gap-2">
+                                    <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>FILTROS</h5>
+                                    <Button
+                                        variant="light"
+                                        size="sm"
+                                        className="p-1 border d-flex align-items-center justify-content-center rounded-circle"
+                                        onClick={() => {
+                                            setSidebarCollapsed(true);
+                                            localStorage.setItem('expenses_sidebar_collapsed', 'true');
+                                        }}
+                                        title="Ocultar filtros"
+                                    >
+                                        <Icons.ChevronLeft size={14} className="text-muted" />
+                                    </Button>
+                                </div>
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="text-danger fw-bold text-decoration-none p-0"
+                                    onClick={() => {
+                                        setFilterDesde('');
+                                        setFilterHasta('');
+                                        setFilterEstado('all');
+                                        setFilterMetodo('all');
+                                    }}
+                                >
+                                    LIMPIAR
+                                </Button>
+                            </div>
+
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Movimientos diarios</span>
+                                <div className="d-flex justify-content-between gap-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                                    {weekDays.map(day => (
+                                        <button
+                                            key={day.dateStr}
+                                            onClick={() => filterByDay(day.dateStr)}
+                                            className={`btn btn-sm d-flex flex-column align-items-center justify-content-center p-1 rounded-3 ${
+                                                day.isActive ? 'bg-dark text-white shadow border-dark' : (day.isToday ? 'btn-soft-primary border-primary' : 'btn-light border')
+                                            }`}
+                                            style={{ minHeight: '45px', width: '100%', minWidth: 0, overflow: 'hidden' }}
+                                        >
+                                            <span style={{ fontSize: '7.5px', fontWeight: '800' }}>{day.label}</span>
+                                            <span className="fw-bold" style={{ fontSize: '11px' }}>{day.dayNum}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Rango de Fechas</span>
+                                <Row className="g-2">
+                                    <Col xs={6}>
+                                        <Form.Control
+                                            type="date"
+                                            size="sm"
+                                            value={filterDesde}
+                                            onChange={(e) => setFilterDesde(e.target.value)}
+                                        />
+                                    </Col>
+                                    <Col xs={6}>
+                                        <Form.Control
+                                            type="date"
+                                            size="sm"
+                                            value={filterHasta}
+                                            onChange={(e) => setFilterHasta(e.target.value)}
+                                        />
+                                    </Col>
+                                </Row>
+                            </div>
+
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Estado de Pago</span>
+                                <Form.Select size="sm" value={filterEstado} onChange={(e) => setFilterEstado(e.target.value)}>
+                                    <option value="all">Todos los estados</option>
+                                    <option value="Pendiente">Pendiente</option>
+                                    <option value="Pagado">Pagado</option>
+                                    <option value="Anulado">Anulado</option>
+                                </Form.Select>
+                            </div>
+
+                            <div className="mb-4">
+                                <span className="d-block text-muted fw-bold mb-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Método de Pago</span>
+                                <Form.Select size="sm" value={filterMetodo} onChange={(e) => setFilterMetodo(e.target.value)}>
+                                    <option value="all">Todos los métodos</option>
+                                    <option value="Transferencia">Transferencia Bancaria</option>
+                                    <option value="Efectivo">Efectivo</option>
+                                    <option value="Yape/Plin">Yape / Plin</option>
+                                    <option value="Tarjeta">Tarjeta</option>
+                                </Form.Select>
+                            </div>
+                        </div>
+                    </Col>
+                )}
+
+                {/* Main Content */}
+                <Col lg={sidebarCollapsed ? 12 : 9}>
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                        <div className="d-flex align-items-center gap-2">
+                            {sidebarCollapsed && (
+                                <Button 
+                                    variant="primary" 
+                                    size="sm" 
+                                    className="d-flex align-items-center gap-1 shadow-sm px-3" 
+                                    onClick={() => {
+                                        setSidebarCollapsed(false);
+                                        localStorage.setItem('expenses_sidebar_collapsed', 'false');
+                                    }}
+                                >
+                                    <Icons.Filter size={16} />
+                                    Mostrar filtros
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Navigation Tabs */}
             <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white mb-4">
                 <Card.Body className="p-0">
                     <Tabs
@@ -311,54 +495,71 @@ export default function ExpensesPage() {
                                     <span className="ms-2">Cargando egresos...</span>
                                 </div>
                             ) : (
-                                <Table hover responsive className="align-middle mb-0">
-                                    <thead className="table-light">
+                                <Table hover responsive className="align-middle mb-0 text-nowrap">
+                                    <thead className="table-light text-muted font-size-12">
                                         <tr>
-                                            <th>Fecha</th>
+                                            <th className="ps-3">Fecha</th>
                                             <th>Categoría</th>
                                             <th>Proveedor</th>
                                             <th>Vehículo / Chofer</th>
                                             <th>Descripción</th>
                                             <th>Total</th>
                                             <th>Estado / Pago</th>
-                                            <th className="text-end">Acciones</th>
+                                            <th className="text-end pe-3">Acciones</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
-                                        {expenses.map(e => (
+                                    <tbody className="font-size-13">
+                                        {filteredExpenses.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(e => {
+                                            const provName = e.proveedor_nombre || 'Sin Proveedor';
+                                            const initials = provName !== 'Sin Proveedor' ? provName.substring(0, 2).toUpperCase() : '?';
+                                            const colors = ['primary', 'info', 'success', 'warning', 'danger', 'violet'];
+                                            const avtBg = colors[(e.proveedor_id || e.id || 0) % colors.length];
+
+                                            return (
                                             <tr key={e.id}>
-                                                <td>
-                                                    <div className="fw-bold text-dark">{e.fecha_gasto ? e.fecha_gasto.split('T')[0].split('-').reverse().join('/') : ''}</div>
+                                                <td className="ps-3">
+                                                    <span className="small text-muted">{e.fecha_gasto ? e.fecha_gasto.split('T')[0].split('-').reverse().join('/') : ''}</span>
                                                 </td>
                                                 <td>
-                                                    <div className="fw-bold">{e.categoria_nombre}</div>
+                                                    <div className="fw-bold text-dark">{e.categoria_nombre}</div>
                                                     <small className="text-muted">{e.grupo_contable} ({e.categoria_tipo})</small>
                                                 </td>
-                                                <td>{e.proveedor_nombre || '—'}</td>
+                                                <td>
+                                                    <div className="d-flex align-items-center">
+                                                        <div className="me-2">
+                                                            <div className={`avatar avatar-xs avatar-rounded bg-soft-${avtBg} text-${avtBg} d-flex align-items-center justify-content-center fw-bold`} style={{ width: '32px', height: '32px', fontSize: '11px', borderRadius: '50%' }}>
+                                                                {initials}
+                                                            </div>
+                                                        </div>
+                                                        <div className="fw-semibold text-dark text-high-em" style={{ fontSize: '13px' }}>{provName}</div>
+                                                    </div>
+                                                </td>
                                                 <td>
                                                     {e.conductor_nombre ? (
                                                         <>
-                                                            <div className="small fw-semibold">{e.conductor_nombre}</div>
+                                                            <div className="small fw-semibold text-dark">{e.conductor_nombre}</div>
                                                             <small className="text-muted">🚚 Placa: {e.vehiculo_placa}</small>
                                                         </>
                                                     ) : '—'}
                                                 </td>
-                                                <td style={{ maxWidth: '250px' }} className="text-truncate" title={e.descripcion}>
-                                                    <div>{e.descripcion || 'Sin descripción'}</div>
-                                                    {e.numero_comprobante && <small className="text-muted">Doc: {e.tipo_comprobante} - {e.numero_comprobante}</small>}
+                                                <td style={{ maxWidth: '250px' }}>
+                                                    <span className="text-muted small text-wrap d-block text-truncate" style={{ fontSize: '12px', lineHeight: '1.4' }} title={e.descripcion}>
+                                                        {e.descripcion || 'Sin descripción'}
+                                                    </span>
+                                                    {e.numero_comprobante && <small className="text-muted d-block mt-1">Doc: {e.tipo_comprobante} - {e.numero_comprobante}</small>}
                                                 </td>
                                                 <td>
                                                     <span className="fw-extrabold text-primary">S/ {parseFloat(e.monto_total || 0).toFixed(2)}</span>
                                                 </td>
                                                 <td>
-                                                    <div className="d-flex flex-column gap-1">
-                                                        <Badge bg={e.estado_pago === 'Pagado' ? 'success-soft text-success' : 'danger-soft text-danger'} className="border">
-                                                            {e.estado_pago}
+                                                    <div className="d-flex flex-column gap-1 align-items-start">
+                                                        <Badge bg={e.estado_pago === 'Pagado' ? 'success text-white' : 'danger text-white'} className="border-0 rounded-pill px-2 py-1">
+                                                            {e.estado_pago === 'Pagado' ? '● Pagado' : '○ Pendiente'}
                                                         </Badge>
-                                                        {e.metodo_pago && <small className="text-muted text-center" style={{ fontSize: '9px' }}>{e.metodo_pago}</small>}
+                                                        {e.metodo_pago && <span className="text-muted text-center fw-bold mt-1" style={{ fontSize: '10px' }}>{e.metodo_pago}</span>}
                                                     </div>
                                                 </td>
-                                                <td className="text-end">
+                                                <td className="text-end pe-3">
                                                     <Button variant="link" className="p-1 text-primary hover-bg rounded-circle" onClick={() => handleEditExpense(e)} title="Editar">
                                                         <Icons.Edit size={16} />
                                                     </Button>
@@ -367,8 +568,9 @@ export default function ExpensesPage() {
                                                     </Button>
                                                 </td>
                                             </tr>
-                                        ))}
-                                        {expenses.length === 0 && (
+                                            );
+                                        })}
+                                        {filteredExpenses.length === 0 && (
                                             <tr>
                                                 <td colSpan={8} className="text-center py-4 text-muted">No se encontraron egresos contables registrados.</td>
                                             </tr>
@@ -376,47 +578,88 @@ export default function ExpensesPage() {
                                     </tbody>
                                 </Table>
                             )}
+                            {!loading && filteredExpenses.length > 0 && (
+                                <div className="d-flex flex-column flex-md-row justify-content-between align-items-center p-3 border-top bg-light-soft">
+                                    <div className="text-muted small mb-2 mb-md-0 fw-semibold">
+                                        Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, filteredExpenses.length)} de {filteredExpenses.length} egresos
+                                    </div>
+                                    <div className="d-flex align-items-center gap-2">
+                                        <Form.Select size="sm" style={{ width: '80px' }} value={itemsPerPage} onChange={(e) => {
+                                            setItemsPerPage(Number(e.target.value));
+                                            setCurrentPage(1);
+                                        }}>
+                                            <option value="10">10</option>
+                                            <option value="25">25</option>
+                                            <option value="50">50</option>
+                                            <option value="100">100</option>
+                                        </Form.Select>
+                                        <div className="btn-group">
+                                            <Button 
+                                                variant="outline-secondary" 
+                                                size="sm" 
+                                                className="fw-bold"
+                                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                disabled={currentPage === 1}
+                                            >
+                                                Anterior
+                                            </Button>
+                                            <Button variant="outline-secondary" size="sm" disabled className="fw-bold text-dark">
+                                                {currentPage} / {Math.ceil(filteredExpenses.length / itemsPerPage)}
+                                            </Button>
+                                            <Button 
+                                                variant="outline-secondary" 
+                                                size="sm" 
+                                                className="fw-bold"
+                                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredExpenses.length / itemsPerPage), p + 1))}
+                                                disabled={currentPage === Math.ceil(filteredExpenses.length / itemsPerPage)}
+                                            >
+                                                Siguiente
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </Tab>
 
                         <Tab eventKey="categories" title="Categorías de Gastos">
-                            <Table hover responsive className="align-middle mb-0">
-                                <thead className="table-light">
+                            <Table hover responsive className="align-middle mb-0 text-nowrap">
+                                <thead className="table-light text-muted font-size-12">
                                     <tr>
-                                        <th style={{ width: '80px' }}>ID</th>
+                                        <th className="ps-3" style={{ width: '80px' }}>ID</th>
                                         <th>Categoría</th>
                                         <th>Tipo</th>
                                         <th>Grupo Contable</th>
                                         <th>Margen Bidón</th>
                                         <th>Margen CAC</th>
                                         <th>Estado</th>
-                                        <th className="text-end" style={{ width: '120px' }}>Acciones</th>
+                                        <th className="text-end pe-3" style={{ width: '120px' }}>Acciones</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="font-size-13">
                                     {categories.map(c => (
                                         <tr key={c.id}>
-                                            <td className="fw-bold text-secondary">#{c.id}</td>
+                                            <td className="ps-3 fw-bold text-secondary">#{c.id}</td>
                                             <td>
                                                 <div className="fw-bold text-dark">{c.nombre}</div>
                                             </td>
                                             <td>{c.tipo}</td>
                                             <td>{c.grupo_contable}</td>
                                             <td>
-                                                <Badge bg={c.afecta_margen_bidon ? 'info-soft text-info' : 'light text-muted'} className="border">
+                                                <Badge bg={c.afecta_margen_bidon ? 'info text-white' : 'secondary text-white'} className="border-0 rounded-pill px-2 py-1">
                                                     {c.afecta_margen_bidon ? 'Afecta' : 'No afecta'}
                                                 </Badge>
                                             </td>
                                             <td>
-                                                <Badge bg={c.afecta_cac ? 'info-soft text-info' : 'light text-muted'} className="border">
+                                                <Badge bg={c.afecta_cac ? 'info text-white' : 'secondary text-white'} className="border-0 rounded-pill px-2 py-1">
                                                     {c.afecta_cac ? 'Afecta' : 'No afecta'}
                                                 </Badge>
                                             </td>
                                             <td>
-                                                <Badge bg={c.activo ? 'success-soft text-success' : 'danger-soft text-danger'} className="border">
-                                                    {c.activo ? 'Activo' : 'Inactivo'}
+                                                <Badge bg={c.activo ? 'success text-white' : 'danger text-white'} className="border-0 rounded-pill px-2 py-1">
+                                                    {c.activo ? '● Activo' : '○ Inactivo'}
                                                 </Badge>
                                             </td>
-                                            <td className="text-end">
+                                            <td className="text-end pe-3">
                                                 <Button variant="link" className="p-1 text-primary hover-bg rounded-circle" onClick={() => handleEditCategory(c)} title="Editar">
                                                     <Icons.Edit size={16} />
                                                 </Button>
@@ -437,6 +680,8 @@ export default function ExpensesPage() {
                     </Tabs>
                 </Card.Body>
             </Card>
+                </Col>
+            </Row>
 
             {/* Expense Modal */}
             <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" backdrop="static">
