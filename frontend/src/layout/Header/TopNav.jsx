@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import SimpleBar from 'simplebar-react';
@@ -19,9 +20,163 @@ import avatar12 from '@/assets/img/avatar12.jpg';
 import { ThemeSwitcher } from '../theme-provider/theme-switcher';
 
 
-const TopNav = () => {
+const getApiBase = () => {
+    if (typeof window !== 'undefined') {
+        const protocol = window.location.protocol;
+        const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
+        return `${protocol}//${hostname}:8081`;
+    }
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
+};
 
+const TopNav = () => {
+    const router = useRouter();
     const { states, dispatch } = useGlobalStateContext();
+
+    const [profile, setProfile] = useState({
+        username: '',
+        role: '',
+        firstName: '',
+        lastName: '',
+        phone: '',
+        avatar: ''
+    });
+
+    useEffect(() => {
+        const username = typeof window !== 'undefined' ? localStorage.getItem("username") : null;
+        const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+
+        const loadProfile = async () => {
+            try {
+                // Validación robusta: si no hay username o token válido, no llamamos a la API
+                if (!username || !token || token === "null" || token === "undefined") {
+                    setProfile({
+                        username: username || 'NextLead',
+                        role: (typeof window !== 'undefined' ? localStorage.getItem("role") : null) || 'USER',
+                        firstName: '',
+                        lastName: '',
+                        phone: '',
+                        avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username || 'NextLead')}`
+                    });
+                    return;
+                }
+
+                const apiUrl = getApiBase();
+                const res = await fetch(`${apiUrl}/api/auth/profile/${username}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    setProfile({
+                        username: data.username,
+                        role: data.role,
+                        firstName: data.firstName || '',
+                        lastName: data.lastName || '',
+                        phone: data.phone || '',
+                        avatar: data.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username)}`
+                    });
+                } else {
+                    setProfile({
+                        username: username,
+                        role: (typeof window !== 'undefined' ? localStorage.getItem("role") : null) || 'USER',
+                        firstName: '',
+                        lastName: '',
+                        phone: '',
+                        avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username)}`
+                    });
+                }
+            } catch (err) {
+                console.error("Error loading user profile in TopNav:", err);
+                // Fallback local en caso de error de red
+                setProfile({
+                    username: username,
+                    role: localStorage.getItem("role") || 'USER',
+                    firstName: '',
+                    lastName: '',
+                    phone: '',
+                    avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username)}`
+                });
+            }
+        };
+
+        loadProfile();
+    }, []);
+
+    useEffect(() => {
+        const fetchFavicon = async () => {
+            try {
+                const API_BASE = getApiBase();
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${API_BASE}/api/settings`, {
+                    headers: {
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    const updateTitle = () => {
+                        if (data['empresa.nombre']) {
+                            const currentTitle = document.title;
+                            if (currentTitle.includes("NextLead")) {
+                                document.title = currentTitle.replaceAll("NextLead", data['empresa.nombre']);
+                            }
+                        }
+                    };
+
+                    const updateFavicon = () => {
+                        if (data['empresa.favicon']) {
+                            const faviconUrl = `${API_BASE}${data['empresa.favicon']}`;
+                            let link = document.querySelector("link[rel*='icon']");
+                            if (!link) {
+                                link = document.createElement('link');
+                                link.rel = 'shortcut icon';
+                                document.getElementsByTagName('head')[0].appendChild(link);
+                            }
+                            if (link.getAttribute('href') !== faviconUrl) {
+                                link.href = faviconUrl;
+                            }
+                        }
+                    };
+
+                    updateTitle();
+                    updateFavicon();
+
+                    const headEl = document.querySelector('head');
+                    if (headEl) {
+                        const observer = new MutationObserver(() => {
+                            updateTitle();
+                            updateFavicon();
+                        });
+                        observer.observe(headEl, { childList: true, subtree: true });
+                    }
+                }
+            } catch (e) {
+                console.error("Error loading favicon in TopNav", e);
+            }
+        };
+
+        fetchFavicon();
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('logo-updated', fetchFavicon);
+            return () => {
+                window.removeEventListener('logo-updated', fetchFavicon);
+            };
+        }
+    }, []);
+
+
+    const handleSignOut = (e) => {
+        e.preventDefault();
+        localStorage.removeItem("token");
+        localStorage.removeItem("username");
+        localStorage.removeItem("role");
+        router.push("/auth/login");
+    };
     const [showDropdown, setShowDropdown] = useState(false);
     const [searchValue, setSearchValue] = useState("")
 
@@ -358,30 +513,34 @@ const TopNav = () => {
                             <Dropdown className="ps-2">
                                 <Dropdown.Toggle as={Link} href="#" className="no-caret">
                                     <div className="avatar avatar-rounded avatar-xs">
-                                        <Image src={avatar12} alt="user" className="avatar-img" />
+                                        <img src={profile.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=NextLead`} alt="user" className="avatar-img" />
                                     </div>
                                 </Dropdown.Toggle>
                                 <Dropdown.Menu align="end">
                                     <div className="p-2">
                                         <div className="media">
                                             <div className="media-head me-2">
-                                                <div className="avatar avatar-primary avatar-sm avatar-rounded">
-                                                    <span className="initial-wrap">Hk</span>
+                                                <div className="avatar avatar-rounded avatar-sm">
+                                                    <img src={profile.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=NextLead`} alt="user" className="avatar-img" />
                                                 </div>
                                             </div>
                                             <div className="media-body">
                                                 <Dropdown>
-                                                    <Dropdown.Toggle as="a" href="#" className="d-block fw-medium text-dark">Hencework</Dropdown.Toggle>
+                                                    <Dropdown.Toggle as="a" href="#" className="d-block fw-medium text-dark">
+                                                        {profile.firstName || profile.lastName ? `${profile.firstName} ${profile.lastName}`.trim() : profile.username || 'NextLead'}
+                                                    </Dropdown.Toggle>
                                                     <Dropdown.Menu align="end">
                                                         <div className="p-2">
                                                             <div className="media align-items-center active-user mb-3">
                                                                 <div className="media-head me-2">
-                                                                    <div className="avatar avatar-primary avatar-xs avatar-rounded">
-                                                                        <span className="initial-wrap">Hk</span>
+                                                                    <div className="avatar avatar-xs avatar-rounded">
+                                                                        <img src={profile.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=NextLead`} alt="user" className="avatar-img" />
                                                                     </div>
                                                                 </div>
                                                                 <div className="media-body">
-                                                                    <Link href="#" className="d-flex link-dark">Hencework <i className="ri-checkbox-circle-fill fs-7 text-primary ms-1" />
+                                                                    <Link href="#" className="d-flex link-dark">
+                                                                        {profile.firstName || profile.lastName ? `${profile.firstName} ${profile.lastName}`.trim() : profile.username || 'NextLead'}
+                                                                        <i className="ri-checkbox-circle-fill fs-7 text-primary ms-1" />
                                                                     </Link>
                                                                     <Link href="#" className="d-block fs-8 link-secondary">
                                                                         <u>Manage your account</u>
@@ -391,12 +550,12 @@ const TopNav = () => {
                                                             <div className="media align-items-center mb-3">
                                                                 <div className="media-head me-2">
                                                                     <div className="avatar avatar-xs avatar-rounded">
-                                                                        <Image src={avatar12} alt="user" className="avatar-img" />
+                                                                        <img src={profile.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=NextLead`} alt="user" className="avatar-img" />
                                                                     </div>
                                                                 </div>
                                                                 <div className="media-body">
-                                                                    <Link href="#" className="d-block link-dark">NextLead</Link>
-                                                                    <Link href="#" className="d-block fs-8 link-secondary">contact@hencework.com</Link>
+                                                                    <Link href="#" className="d-block link-dark">{profile.username || 'NextLead'}</Link>
+                                                                    <Link href="#" className="d-block fs-8 link-secondary">{profile.username ? `${profile.username}@nextlead.com` : 'contact@hencework.com'}</Link>
                                                                 </div>
                                                             </div>
                                                             <Button variant="outline-light" size="sm" className="btn-block">
@@ -411,8 +570,8 @@ const TopNav = () => {
                                                         </div>
                                                     </Dropdown.Menu>
                                                 </Dropdown>
-                                                <div className="fs-7">contact@hencework.com</div>
-                                                <Link href="#" className="d-block fs-8 link-secondary">
+                                                <div className="fs-7">{profile.username ? `${profile.username}@nextlead.com` : 'contact@hencework.com'}</div>
+                                                <Link href="#" className="d-block fs-8 link-secondary" onClick={handleSignOut}>
                                                     <u>Sign Out</u>
                                                 </Link>
                                             </div>

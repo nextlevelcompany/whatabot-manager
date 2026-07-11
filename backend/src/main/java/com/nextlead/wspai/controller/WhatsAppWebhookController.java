@@ -212,6 +212,7 @@ public class WhatsAppWebhookController {
                         String last9 = fromPhone.length() >= 9 ? fromPhone.substring(fromPhone.length() - 9) : fromPhone;
                         String destination = "/topic/chat/" + last9;
                         messagingTemplate.convertAndSend(destination, message);
+                        messagingTemplate.convertAndSend("/topic/chat/global-updates", message);
                         logger.info("Mensaje transmitido en tiempo real vía WebSocket a {}", destination);
 
                         // Responder asíncronamente con Gemini para textos, audios y ubicaciones. Imágenes/video solo se guardan y muestran en el CRM.
@@ -322,6 +323,7 @@ public class WhatsAppWebhookController {
 
                                 // 4. Transmitir el mensaje por WebSocket
                                 messagingTemplate.convertAndSend("/topic/chat/" + last9, fallbackReply);
+                                messagingTemplate.convertAndSend("/topic/chat/global-updates", fallbackReply);
 
                                 // 5. Registrar una alerta del sistema en la BD y transmitirla por WebSocket
                                 sendSystemAlert(fromPhone, "⚠️ *Alerta del Sistema:* Chatbot desactivado y caso derivado a un asesor humano.", ourNumber);
@@ -592,6 +594,7 @@ public class WhatsAppWebhookController {
 
             String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
             messagingTemplate.convertAndSend("/topic/chat/" + last9, aiMessage);
+            messagingTemplate.convertAndSend("/topic/chat/global-updates", aiMessage);
             logger.info("Respuesta de la IA transmitida en tiempo real al chat de la pantalla.");
 
             if (wamid == null) {
@@ -730,6 +733,7 @@ public class WhatsAppWebhookController {
         // Transmitir vía WebSocket
         String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
         messagingTemplate.convertAndSend("/topic/chat/" + last9, alertMessage);
+        messagingTemplate.convertAndSend("/topic/chat/global-updates", alertMessage);
         logger.info("Alerta de sistema transmitida vía WebSocket a /topic/chat/{}", last9);
     }
 
@@ -751,6 +755,7 @@ public class WhatsAppWebhookController {
                         String clientPhone = msg.getReceiver(); // El destinatario original del mensaje enviado
                         String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
                         messagingTemplate.convertAndSend("/topic/chat/" + last9, msg);
+                        messagingTemplate.convertAndSend("/topic/chat/global-updates", msg);
                         logger.info("Estado de mensaje transmitido vía WebSocket a /topic/chat/{}", last9);
                     });
                 }

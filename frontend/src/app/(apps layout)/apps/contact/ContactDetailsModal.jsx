@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Modal, Button, Row, Col, Badge, Spinner, Alert, ListGroup } from 'react-bootstrap';
 import { Mail, Phone, Calendar, User, Briefcase, Hash, Globe, Star } from 'react-feather';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 
 const Avatar = ({ contact }) => {
     if (!contact) return null;

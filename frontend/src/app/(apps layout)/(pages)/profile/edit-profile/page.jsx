@@ -25,7 +25,7 @@ const EditProfile = ({ toggleCollapsedNav }) => {
         
         const fetchProfile = async () => {
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
                 const res = await fetch(`${apiUrl}/api/auth/profile/${storedUser}`);
                 if (res.ok) {
                     const data = await res.json();
@@ -66,7 +66,7 @@ const EditProfile = ({ toggleCollapsedNav }) => {
         setLoading(true);
 
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
             const res = await fetch(`${apiUrl}/api/auth/profile/${username}`, {
                 method: "PUT",
                 headers: {

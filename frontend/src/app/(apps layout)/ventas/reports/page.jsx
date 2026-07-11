@@ -7,9 +7,9 @@ import { Calendar, DollarSign, PieChart, ShoppingCart, User, Percent, Activity }
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-        return `${window.location.protocol}//${hostname}:8080`;
+        return `${window.location.protocol}//${hostname}:8081`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 const API_BASE = getApiBase();
 
@@ -76,8 +76,9 @@ export default function SalesReportsPage() {
     const volumenTotal = byProduct.reduce((sum, p) => sum + parseInt(p.total_cantidad || 0), 0);
 
     return (
-        <div className="contact-body">
-            <SimpleBar className="nicescroll-bar">
+        <div className="hk-pg-body">
+            <div className="contact-body w-100">
+                <SimpleBar className="nicescroll-bar">
                 <div className="px-4 py-4">
                     {/* Header */}
                     <div className="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom">
@@ -305,6 +306,7 @@ export default function SalesReportsPage() {
                     )}
                 </div>
             </SimpleBar>
+            </div>
         </div>
     );
 }

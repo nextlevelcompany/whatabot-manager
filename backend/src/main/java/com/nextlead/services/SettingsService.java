@@ -117,6 +117,10 @@ public class SettingsService {
         settings.put("empresa.nombre", getSetting("empresa.nombre"));
         settings.put("empresa.ruc", getSetting("empresa.ruc"));
         settings.put("empresa.telefono", getSetting("empresa.telefono"));
+        settings.put("empresa.logo", getSetting("empresa.logo"));
+        settings.put("empresa.logo.height", getSetting("empresa.logo.height"));
+        settings.put("empresa.favicon", getSetting("empresa.favicon"));
+        settings.put("empresa.favicon.height", getSetting("empresa.favicon.height"));
         settings.put("timezone", getSetting("timezone"));
         settings.put("formato.fecha", getSetting("formato.fecha"));
         settings.put("formato.hora", getSetting("formato.hora"));
@@ -204,6 +208,14 @@ public class SettingsService {
                 return "20611846721";
             case "empresa.telefono":
                 return "948613380";
+            case "empresa.logo":
+                return "";
+            case "empresa.logo.height":
+                return "48";
+            case "empresa.favicon":
+                return "";
+            case "empresa.favicon.height":
+                return "32";
             case "timezone":
                 return "America/Lima";
             case "formato.fecha":

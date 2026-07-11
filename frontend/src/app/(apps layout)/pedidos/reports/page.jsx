@@ -8,10 +8,10 @@ const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname;
-        if (hostname === 'localhost') return 'http://localhost:8080';
-        return `http://${hostname}:8080`;
+        if (hostname === 'localhost') return 'http://localhost:8081';
+        return `http://${hostname}:8081`;
     }
-    return 'http://localhost:8080';
+    return 'http://localhost:8081';
 };
 const API_BASE = getApiBase();
 
@@ -180,7 +180,8 @@ export default function PedidosReportsPage() {
     }, [filteredPedidos]);
 
     return (
-        <Container fluid className="py-4">
+        <div className="hk-pg-body">
+            <Container fluid className="py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <div className="d-flex align-items-center gap-3">
                     {sidebarCollapsed && (
@@ -403,6 +404,7 @@ export default function PedidosReportsPage() {
                     )}
                 </Col>
             </Row>
-        </Container>
+            </Container>
+        </div>
     );
 }

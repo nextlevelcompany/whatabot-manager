@@ -8,9 +8,9 @@ const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const protocol = window.location.protocol;
         const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-        return `${protocol}//${hostname}:8080`;
+        return `${protocol}//${hostname}:8081`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 
 const API_BASE = getApiBase();
@@ -20,6 +20,10 @@ export default function GeneralSettingsPage() {
         'empresa.nombre': 'NextLead CRM',
         'empresa.ruc': '20611846721',
         'empresa.telefono': '948613380',
+        'empresa.logo': '',
+        'empresa.logo.height': '48',
+        'empresa.favicon': '',
+        'empresa.favicon.height': '32',
         'timezone': 'America/Lima',
         'formato.fecha': 'd/m/Y',
         'formato.hora': '24h',
@@ -27,11 +31,18 @@ export default function GeneralSettingsPage() {
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [uploadingFavicon, setUploadingFavicon] = useState(false);
 
     useEffect(() => {
         const fetchSettings = async () => {
             try {
-                const res = await fetch(`${API_BASE}/api/settings`);
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${API_BASE}/api/settings`, {
+                    headers: {
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    }
+                });
                 if (res.ok) {
                     const data = await res.json();
                     // Merge loaded values with defaults to ensure all keys exist
@@ -57,14 +68,104 @@ export default function GeneralSettingsPage() {
         }));
     };
 
+    const handleLogoUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (file.size > 2 * 1024 * 1024) {
+            Swal.fire('Error', 'El archivo es demasiado grande. El límite es de 2MB.', 'error');
+            return;
+        }
+
+        setUploading(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${API_BASE}/api/messages/upload`, {
+                method: 'POST',
+                headers: {
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
+                body: formData
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                handleChange('empresa.logo', data.url);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Logo cargado',
+                    text: 'El logotipo se ha subido correctamente al borrador. Guarda los ajustes para guardar los cambios.',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire('Error', 'No se pudo subir la imagen del logo.', 'error');
+            }
+        } catch (err) {
+            console.error("Error uploading logo", err);
+            Swal.fire('Error', 'Error de conexión al subir el logo.', 'error');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleFaviconUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (file.size > 1 * 1024 * 1024) {
+            Swal.fire('Error', 'El archivo de favicon es demasiado grande. El límite es de 1MB.', 'error');
+            return;
+        }
+
+        setUploadingFavicon(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${API_BASE}/api/messages/upload`, {
+                method: 'POST',
+                headers: {
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
+                body: formData
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                handleChange('empresa.favicon', data.url);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Favicon cargado',
+                    text: 'El favicon se ha subido correctamente al borrador. Guarda los ajustes para guardar los cambios.',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire('Error', 'No se pudo subir la imagen del favicon.', 'error');
+            }
+        } catch (err) {
+            console.error("Error uploading favicon", err);
+            Swal.fire('Error', 'Error de conexión al subir el favicon.', 'error');
+        } finally {
+            setUploadingFavicon(false);
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSaving(true);
         try {
+            const token = localStorage.getItem('token');
             const res = await fetch(`${API_BASE}/api/settings`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                 },
                 body: JSON.stringify(settings)
             });
@@ -77,6 +178,9 @@ export default function GeneralSettingsPage() {
                     timer: 1500,
                     showConfirmButton: false
                 });
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new Event('logo-updated'));
+                }
             } else {
                 Swal.fire('Error', 'No se pudieron guardar los ajustes.', 'error');
             }
@@ -119,6 +223,83 @@ export default function GeneralSettingsPage() {
                                     Información de la Empresa
                                 </h5>
                                 <Row className="g-3">
+                                    {/* Logo y Favicon de la empresa */}
+                                    <Col md={6} className="d-flex align-items-center gap-3 mb-3 pb-3 border-bottom border-light">
+                                        <div className="position-relative border rounded p-2 bg-light d-flex align-items-center justify-content-center" style={{ width: '80px', height: '80px', overflow: 'hidden' }}>
+                                            {settings['empresa.logo'] ? (
+                                                <img 
+                                                    src={`${API_BASE}${settings['empresa.logo']}`} 
+                                                    alt="logo" 
+                                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
+                                                />
+                                            ) : (
+                                                <span className="text-muted small">Sin Logo</span>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <Form.Label className="fw-bold small text-muted text-uppercase mb-1 d-block">Logotipo Comercial</Form.Label>
+                                            <input 
+                                                type="file" 
+                                                accept="image/*" 
+                                                className="form-control form-control-sm mb-1" 
+                                                style={{ maxWidth: '280px' }} 
+                                                onChange={handleLogoUpload}
+                                                disabled={uploading}
+                                            />
+                                            <div className="d-flex align-items-center justify-content-between mb-1">
+                                                <span className="text-muted" style={{ fontSize: '11px' }}>Formatos PNG, JPG, SVG. Máx 2MB.</span>
+                                                {uploading && <span className="spinner-border spinner-border-sm text-primary ms-2" role="status"></span>}
+                                            </div>
+                                            <Form.Label className="fw-bold small text-muted text-uppercase mb-0 mt-1 d-block" style={{ fontSize: '11px' }}>Altura del Logo: <span className="text-primary">{settings['empresa.logo.height'] || '48'}px</span></Form.Label>
+                                            <input 
+                                                type="range" 
+                                                min="20" 
+                                                max="100" 
+                                                value={settings['empresa.logo.height'] || '48'} 
+                                                onChange={(e) => handleChange('empresa.logo.height', e.target.value)}
+                                                className="form-range py-1" 
+                                                style={{ maxWidth: '240px' }} 
+                                            />
+                                        </div>
+                                    </Col>
+                                    <Col md={6} className="d-flex align-items-center gap-3 mb-3 pb-3 border-bottom border-light">
+                                        <div className="position-relative border rounded p-2 bg-light d-flex align-items-center justify-content-center" style={{ width: '80px', height: '80px', overflow: 'hidden' }}>
+                                            {settings['empresa.favicon'] ? (
+                                                <img 
+                                                    src={`${API_BASE}${settings['empresa.favicon']}`} 
+                                                    alt="favicon" 
+                                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
+                                                />
+                                            ) : (
+                                                <span className="text-muted small">Sin Favicon</span>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <Form.Label className="fw-bold small text-muted text-uppercase mb-1 d-block">Favicon / Icono Contraído</Form.Label>
+                                            <input 
+                                                type="file" 
+                                                accept="image/*" 
+                                                className="form-control form-control-sm mb-1" 
+                                                style={{ maxWidth: '280px' }} 
+                                                onChange={handleFaviconUpload}
+                                                disabled={uploadingFavicon}
+                                            />
+                                            <div className="d-flex align-items-center justify-content-between mb-1">
+                                                <span className="text-muted" style={{ fontSize: '11px' }}>Soporta ICO, PNG, SVG. Máx 1MB.</span>
+                                                {uploadingFavicon && <span className="spinner-border spinner-border-sm text-primary ms-2" role="status"></span>}
+                                            </div>
+                                            <Form.Label className="fw-bold small text-muted text-uppercase mb-0 mt-1 d-block" style={{ fontSize: '11px' }}>Altura del Icono: <span className="text-primary">{settings['empresa.favicon.height'] || '32'}px</span></Form.Label>
+                                            <input 
+                                                type="range" 
+                                                min="16" 
+                                                max="60" 
+                                                value={settings['empresa.favicon.height'] || '32'} 
+                                                onChange={(e) => handleChange('empresa.favicon.height', e.target.value)}
+                                                className="form-range py-1" 
+                                                style={{ maxWidth: '240px' }} 
+                                            />
+                                        </div>
+                                    </Col>
                                     <Col md={12}>
                                         <Form.Group>
                                             <Form.Label className="fw-bold small text-muted text-uppercase mb-2">Nombre Comercial</Form.Label>

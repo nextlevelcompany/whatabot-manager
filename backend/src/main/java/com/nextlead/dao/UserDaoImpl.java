@@ -96,4 +96,34 @@ public class UserDaoImpl implements UserDao {
             user.getUsername()
         );
     }
+
+    @Override
+    public void update(User user) {
+        String sql = "UPDATE users SET password = ?, role = ?, first_name = ?, last_name = ?, location = ?, bio = ?, phone = ?, website = ?, avatar = ? WHERE username = ?";
+        jdbcTemplate.update(sql, 
+            user.getPassword(),
+            user.getRole(),
+            user.getFirstName(), 
+            user.getLastName(), 
+            user.getLocation(), 
+            user.getBio(), 
+            user.getPhone(), 
+            user.getWebsite(),
+            user.getAvatar(),
+            user.getUsername()
+        );
+    }
+
+    @Override
+    public java.util.List<User> findAll() {
+        String sql = "SELECT id, username, password, role, first_name, last_name, location, bio, phone, website, avatar FROM users ORDER BY id ASC";
+        return jdbcTemplate.query(sql, rowMapper);
+    }
+
+    @Override
+    public void deleteByUsername(String username) {
+        String sql = "DELETE FROM users WHERE username = ?";
+        jdbcTemplate.update(sql, username);
+    }
 }
+

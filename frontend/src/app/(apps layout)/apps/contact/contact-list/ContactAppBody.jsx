@@ -4,15 +4,26 @@ import SimpleBar from 'simplebar-react';
 import { Button, Col, Form, Row, Badge, Spinner } from 'react-bootstrap';
 import Link from 'next/link';
 import HkDataTable from '@/components/@hk-data-table';
-import { Edit, Trash, Eye } from 'react-feather';
+import { Edit, Trash, Eye, List, Map, MessageSquare } from 'react-feather';
 import ContactsMap from './ContactsMap';
+import dynamic from 'next/dynamic';
+
+const ContactLiveChats = dynamic(() => import('./ContactLiveChats'), {
+    ssr: false,
+    loading: () => (
+        <div className="text-center py-5">
+            <Spinner animation="border" className="text-primary" />
+            <p className="mt-2 text-muted">Cargando chats en vivo...</p>
+        </div>
+    )
+});
 
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-        return `${window.location.protocol}//${hostname}:8080`;
+        return `${window.location.protocol}//${hostname}:8081`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 const API_BASE = getApiBase();
 
@@ -292,15 +303,28 @@ const ContactAppBody = ({ reloadRef, viewMode, setViewMode }) => {
                                         variant={viewMode === 'list' ? 'primary' : 'outline-secondary'} 
                                         onClick={() => setViewMode('list')}
                                         title="Vista de Lista"
+                                        className="d-flex align-items-center justify-content-center"
+                                        style={{ width: '36px', height: '32px' }}
                                     >
-                                        📋 Lista
+                                        <List size={16} />
                                     </Button>
                                     <Button 
                                         variant={viewMode === 'map' ? 'primary' : 'outline-secondary'} 
                                         onClick={() => setViewMode('map')}
                                         title="Vista de Mapa"
+                                        className="d-flex align-items-center justify-content-center"
+                                        style={{ width: '36px', height: '32px' }}
                                     >
-                                        🗺️ Mapa
+                                        <Map size={16} />
+                                    </Button>
+                                    <Button 
+                                        variant={viewMode === 'chats' ? 'primary' : 'outline-secondary'} 
+                                        onClick={() => setViewMode('chats')}
+                                        title="Vista de Chats en Vivo"
+                                        className="d-flex align-items-center justify-content-center"
+                                        style={{ width: '36px', height: '32px' }}
+                                    >
+                                        <MessageSquare size={16} />
                                     </Button>
                                 </div>
                                 <Button size="sm" variant="outline-secondary" className="ms-2" onClick={loadContacts} title="Recargar">
@@ -317,6 +341,8 @@ const ContactAppBody = ({ reloadRef, viewMode, setViewMode }) => {
                         </div>
                     ) : viewMode === 'map' ? (
                         <ContactsMap contacts={filtered} />
+                    ) : viewMode === 'chats' ? (
+                        <ContactLiveChats contacts={filtered} />
                     ) : (
                         <HkDataTable
                             column={columns}

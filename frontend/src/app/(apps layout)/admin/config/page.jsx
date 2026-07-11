@@ -7,9 +7,9 @@ const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const protocol = window.location.protocol;
         const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-        return `${protocol}//${hostname}:8080`;
+        return `${protocol}//${hostname}:8081`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 
 const API_BASE = getApiBase();
@@ -360,7 +360,12 @@ Pago por QR: Escanea el código que te proporcionaremos desde tu móvil.
     const fetchLogs = async () => {
         setLoadingLogs(true);
         try {
-            const res = await fetch(`${API_BASE}/api/admin/logs?lines=${logLinesCount}`);
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_BASE}/api/admin/logs?lines=${logLinesCount}`, {
+                headers: {
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setLogs(data);
@@ -2591,7 +2596,7 @@ Pago por QR: Escanea el código que te proporcionaremos desde tu móvil.
                                                 if (editingFaq) setEditingFaq({ ...editingFaq, attachmentUrl: e.target.value });
                                                 else setNewFaq({ ...newFaq, attachmentUrl: e.target.value });
                                             }}
-                                            placeholder="Ej: http://localhost:8080/uploads/catalogo.pdf"
+                                            placeholder="Ej: http://localhost:8081/uploads/catalogo.pdf"
                                             disabled={editingFaq ? editingFaq.attachmentType === 'NONE' : newFaq.attachmentType === 'NONE'}
                                         />
                                     </Form.Group>

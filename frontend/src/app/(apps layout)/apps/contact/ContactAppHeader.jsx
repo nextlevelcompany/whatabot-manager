@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button, Dropdown } from 'react-bootstrap';
 import classNames from 'classnames';
-import { Archive, ChevronDown, ChevronUp, Edit, ExternalLink, Grid, List, MoreVertical, RefreshCw, Server, Settings, Slash, Star, Trash2, User } from 'react-feather';
+import { Archive, ChevronDown, ChevronUp, Edit, ExternalLink, Grid, List, MoreVertical, RefreshCw, Server, Settings, Slash, Star, Trash2, User, MessageSquare } from 'react-feather';
 import { usePathname } from 'next/navigation';
 import { useGlobalStateContext } from '@/context/GolobalStateProvider';
 import HkTooltip from '@/components/@hk-tooltip/HkTooltip';
@@ -66,7 +66,7 @@ const ContactAppHeader = ({ toggleSidebar, show, onAddNewContact, viewMode, setV
                     <Dropdown.Toggle as="a" href="#" className="btn btn-icon btn-flush-dark flush-soft-hover no-caret active">
                         <span className="icon">
                             <span className="feather-icon">
-                                {contactListRoute && viewMode === 'map' ? '🗺️' : contactListRoute ? <List /> : <Grid />}
+                                {contactListRoute && viewMode === 'map' ? '🗺️' : contactListRoute && viewMode === 'chats' ? <MessageSquare /> : contactListRoute ? <List /> : <Grid />}
                             </span>
                         </span>
                     </Dropdown.Toggle>
@@ -91,6 +91,17 @@ const ContactAppHeader = ({ toggleSidebar, show, onAddNewContact, viewMode, setV
                                     🗺️
                                 </span>
                                 <span>Map View</span>
+                            </Dropdown.Item>
+                        )}
+                        {contactListRoute && (
+                            <Dropdown.Item 
+                                onClick={() => setViewMode && setViewMode('chats')} 
+                                className={classNames({ "active": viewMode === 'chats' })}
+                            >
+                                <span className="feather-icon dropdown-icon">
+                                    <MessageSquare />
+                                </span>
+                                <span>Chats en Vivo</span>
                             </Dropdown.Item>
                         )}
                         <Dropdown.Item 

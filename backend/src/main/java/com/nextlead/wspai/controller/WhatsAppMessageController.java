@@ -136,6 +136,7 @@ public class WhatsAppMessageController {
                 : message.getReceiver();
         String destination = "/topic/chat/" + last9;
         messagingTemplate.convertAndSend(destination, message);
+        messagingTemplate.convertAndSend("/topic/chat/global-updates", message);
 
         return new ResponseEntity<>(message, HttpStatus.CREATED);
     }

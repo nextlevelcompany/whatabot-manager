@@ -8,9 +8,9 @@ import Swal from 'sweetalert2';
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-        return `${window.location.protocol}//${hostname}:8080`;
+        return `${window.location.protocol}//${hostname}:8081`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 const API_BASE = getApiBase();
 

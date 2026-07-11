@@ -9,9 +9,9 @@ const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const protocol = window.location.protocol;
         const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-        return `${protocol}//${hostname}:8080`;
+        return `${protocol}//${hostname}:8081`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 const API_BASE = getApiBase();
 const IGV_RATE = 0.18;
@@ -397,8 +397,9 @@ export default function CreateSalePage() {
     };
 
     return (
-        <div className="p-4" style={{ background: '#f8fafc', minHeight: '100vh' }}>
-            {/* Header */}
+        <div className="hk-pg-body">
+            <div className="container-fluid px-4 py-4">
+                {/* Header */}
             <div className="d-flex align-items-center justify-content-between mb-4">
                 <h4 className="text-primary fw-bold mb-0">Registro de Nueva Venta</h4>
                 <Button variant="outline-secondary" size="sm" className="fw-bold px-3" onClick={() => router.push('/ventas/view')}>
@@ -684,6 +685,7 @@ export default function CreateSalePage() {
                     </Button>
                 </Modal.Footer>
             </Modal>
+            </div>
         </div>
     );
 }

@@ -10,9 +10,9 @@ const getApiBase = () => {
     if (typeof window !== 'undefined') {
         const protocol = window.location.protocol;
         const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-        return `${protocol}//${hostname}:8080`;
+        return `${protocol}//${hostname}:8081`;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 const API_BASE = getApiBase();
 
@@ -254,8 +254,9 @@ export default function SalesViewPage() {
     };
 
     return (
-        <div className="p-4" style={{ background: '#f8fafc', minHeight: '100vh' }}>
-            {/* Header Toolbar */}
+        <div className="hk-pg-body">
+            <div className="container-fluid px-4 py-4">
+                {/* Header Toolbar */}
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 bg-white p-3 rounded shadow-sm border mb-4">
                 <div className="d-flex align-items-center">
                     <Button 
@@ -945,6 +946,7 @@ export default function SalesViewPage() {
                     </Button>
                 </Modal.Footer>
             </Modal>
+            </div>
         </div>
     );
 }

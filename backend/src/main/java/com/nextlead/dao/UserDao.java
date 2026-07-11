@@ -9,4 +9,9 @@ public interface UserDao {
     boolean existsByUsername(String username);
     long count();
     void updateProfile(User user);
+    void update(User user);
+    java.util.List<User> findAll();
+    void deleteByUsername(String username);
 }
+
+
