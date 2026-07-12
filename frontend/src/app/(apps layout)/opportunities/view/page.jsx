@@ -108,12 +108,16 @@ export default function OpportunitiesKanbanPage() {
     const [filterDesde, setFilterDesde] = useState('');
     const [filterHasta, setFilterHasta] = useState('');
     const [hoveredCardId, setHoveredCardId] = useState(null);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    useEffect(() => {
         if (typeof window !== 'undefined') {
-            return localStorage.getItem('opps_sidebar_collapsed') === 'true';
+            const stored = localStorage.getItem('opps_sidebar_collapsed');
+            if (stored === 'true') {
+                setSidebarCollapsed(true);
+            }
         }
-        return false;
-    });
+    }, []);
 
     const filterByDay = (dateStr) => {
         setFilterDesde(filterDesde === dateStr ? '' : dateStr);
