@@ -608,14 +608,27 @@ CREATE TABLE IF NOT EXISTS kanban_columnas (
     label_perdida VARCHAR(100) DEFAULT 'Perdida'
 );
 
-INSERT INTO kanban_columnas (nombre, orden, es_ganada, es_perdida) VALUES
-('Prospecto', 1, false, false),
-('Contacto Establecido', 2, false, false),
-('Propuesta Presentada', 3, false, false),
-('En Negociación', 4, false, false),
-('Ganada', 5, true, false),
-('Perdida', 6, false, true)
-ON CONFLICT DO NOTHING;
+-- Eliminar posibles registros duplicados generados anteriormente por reinicios (manteniendo el primer ID creado)
+DELETE FROM kanban_columnas 
+WHERE id NOT IN (
+    SELECT MIN(id) 
+    FROM kanban_columnas 
+    GROUP BY nombre
+);
+
+-- Insertar columnas por defecto solo si la tabla está vacía para evitar duplicados en reinicios de Spring Boot
+INSERT INTO kanban_columnas (nombre, orden, es_ganada, es_perdida)
+SELECT nombre_val, orden_val, es_ganada_val, es_perdida_val
+FROM (
+    VALUES 
+    ('Prospecto', 1, false, false),
+    ('Contacto Establecido', 2, false, false),
+    ('Propuesta Presentada', 3, false, false),
+    ('En Negociación', 4, false, false),
+    ('Ganada', 5, true, false),
+    ('Perdida', 6, false, true)
+) AS t(nombre_val, orden_val, es_ganada_val, es_perdida_val)
+WHERE NOT EXISTS (SELECT 1 FROM kanban_columnas);
 
 CREATE TABLE IF NOT EXISTS kanban_etiquetas (
     id SERIAL PRIMARY KEY,
@@ -642,6 +655,10 @@ CREATE TABLE IF NOT EXISTS oportunidades (
     orden INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Agregar columnas para soportar más detalles y lista de productos en Oportunidades (CRM)
+ALTER TABLE oportunidades ADD COLUMN IF NOT EXISTS notas TEXT;
+ALTER TABLE oportunidades ADD COLUMN IF NOT EXISTS productos_json TEXT;
 
 -- ============================================================
 -- FASE 5 PART 2: VENTAS, RENTABILIDAD & ENVASES

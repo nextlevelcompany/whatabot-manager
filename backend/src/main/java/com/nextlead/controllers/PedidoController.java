@@ -384,11 +384,35 @@ public class PedidoController {
                     jdbcTemplate.update("DELETE FROM ventas WHERE id = ?", ventaId);
                 }
 
-                jdbcTemplate.update(
-                        "UPDATE pedidos SET etapa_id = ?, venta_id = NULL, venta_estado = 'pendiente', envases_entregados = 0, envases_devueltos = 0 WHERE id = ?",
-                        req.etapa_id,
-                        req.pedido_id
-                );
+                if (req.chofer_id != null && req.zona != null) {
+                    jdbcTemplate.update(
+                            "UPDATE pedidos SET etapa_id = ?, venta_id = NULL, venta_estado = 'pendiente', envases_entregados = 0, envases_devueltos = 0, chofer_id = ?, zona = ? WHERE id = ?",
+                            req.etapa_id,
+                            req.chofer_id,
+                            req.zona,
+                            req.pedido_id
+                    );
+                } else if (req.chofer_id != null) {
+                    jdbcTemplate.update(
+                            "UPDATE pedidos SET etapa_id = ?, venta_id = NULL, venta_estado = 'pendiente', envases_entregados = 0, envases_devueltos = 0, chofer_id = ? WHERE id = ?",
+                            req.etapa_id,
+                            req.chofer_id,
+                            req.pedido_id
+                    );
+                } else if (req.zona != null) {
+                    jdbcTemplate.update(
+                            "UPDATE pedidos SET etapa_id = ?, venta_id = NULL, venta_estado = 'pendiente', envases_entregados = 0, envases_devueltos = 0, zona = ? WHERE id = ?",
+                            req.etapa_id,
+                            req.zona,
+                            req.pedido_id
+                    );
+                } else {
+                    jdbcTemplate.update(
+                            "UPDATE pedidos SET etapa_id = ?, venta_id = NULL, venta_estado = 'pendiente', envases_entregados = 0, envases_devueltos = 0 WHERE id = ?",
+                            req.etapa_id,
+                            req.pedido_id
+                    );
+                }
             }
 
             return ResponseEntity.ok(Map.of("status", "success", "message", "Pedido movido correctamente."));
@@ -537,5 +561,7 @@ public class PedidoController {
         public String metodo_pago_real;
         public Integer pendiente_pago;
         public String cancel_reason;
+        public Integer chofer_id;
+        public Integer zona;
     }
 }

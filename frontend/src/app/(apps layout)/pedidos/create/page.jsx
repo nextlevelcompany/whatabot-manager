@@ -169,6 +169,49 @@ export default function PedidosCreatePage() {
         loadOrder();
     }, [editId]);
 
+    // Load opportunity data if redirected from CRM Opportunity Convert button
+    useEffect(() => {
+        const fromOpp = searchParams.get('from_opp');
+        if (fromOpp === 'true') {
+            const oppDataRaw = localStorage.getItem('convert_opportunity_data');
+            if (oppDataRaw) {
+                try {
+                    const oppData = JSON.parse(oppDataRaw);
+                    
+                    // Select client
+                    if (oppData.contacto_id) {
+                        setSelectedClient({
+                            id: oppData.contacto_id,
+                            text: `Cliente Vinculado (Oportunidad CRM)`
+                        });
+                        loadClientDetails(oppData.contacto_id);
+                    }
+
+                    // Prioridad
+                    setPrioridad(oppData.prioridad || 'Media');
+                    
+                    // Notas
+                    setNotas(oppData.notas || '');
+
+                    // Products
+                    if (oppData.productos && Array.isArray(oppData.productos)) {
+                        setProductosVenta(oppData.productos.map(item => ({
+                            id: item.id,
+                            nombre: item.nombre,
+                            precio: parseFloat(item.precio || 0),
+                            cantidad: parseInt(item.cantidad || 1)
+                        })));
+                    }
+                    
+                    // Clear storage
+                    localStorage.removeItem('convert_opportunity_data');
+                } catch (e) {
+                    console.error("Error parsing convert_opportunity_data", e);
+                }
+            }
+        }
+    }, [searchParams]);
+
     const loadClientDetails = async (clientId, selectAddressText = null) => {
         try {
             const res = await fetch(`${API_BASE}/api/pedidos/contact-details/${clientId}`);

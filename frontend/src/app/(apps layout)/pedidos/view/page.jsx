@@ -827,6 +827,66 @@ export default function PedidosViewPage() {
 
         const sc = allData.columns.find(c => String(c.id) === String(order.etapa_id));
 
+        if (tc.nombre === 'En Ruta' && (!order.zona || !order.chofer_id)) {
+            const selectedZona = order.zona || '';
+            const selectedChofer = order.chofer_id || '';
+
+            const zonasOptions = allData.zonas.map(z => 
+                `<option value="${z.id}" ${String(z.id) === String(selectedZona) ? 'selected' : ''}>${z.nombre}</option>`
+            ).join('');
+
+            const driversOptions = allData.drivers.map(d => 
+                `<option value="${d.id}" ${String(d.id) === String(selectedChofer) ? 'selected' : ''}>${d.nombre} ${d.apellido} (${d.vehiculo_placa || 'Sin placa'})</option>`
+            ).join('');
+
+            Swal.fire({
+                title: 'Datos de Reparto Faltantes',
+                html: `
+                    <div style="font-family: sans-serif; font-size: 14px; text-align: left;">
+                        <p class="text-muted">Para pasar el pedido a <b>En Ruta</b>, debes asignar la zona y el repartidor responsable.</p>
+                        <div class="mb-3">
+                            <label class="small fw-bold">Zona de Reparto:</label>
+                            <select id="swal-assign-zona" class="form-select form-select-sm">
+                                <option value="">-- Seleccionar Zona --</option>
+                                ${zonasOptions}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="small fw-bold">Chofer / Repartidor:</label>
+                            <select id="swal-assign-chofer" class="form-select form-select-sm">
+                                <option value="">-- Seleccionar Chofer --</option>
+                                ${driversOptions}
+                            </select>
+                        </div>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Asignar y Enviar a Ruta',
+                cancelButtonText: 'Cancelar',
+                preConfirm: () => {
+                    const zonaVal = document.getElementById('swal-assign-zona').value;
+                    const choferVal = document.getElementById('swal-assign-chofer').value;
+                    if (!zonaVal) {
+                        Swal.showValidationMessage('Debes seleccionar una zona');
+                        return false;
+                    }
+                    if (!choferVal) {
+                        Swal.showValidationMessage('Debes seleccionar un chofer');
+                        return false;
+                    }
+                    return {
+                        zona: parseInt(zonaVal),
+                        chofer_id: parseInt(choferVal)
+                    };
+                }
+            }).then(r => {
+                if (r.isConfirmed) {
+                    executeMove(r.value);
+                }
+            });
+            return;
+        }
+
         if (tc.es_perdido == 1) {
             Swal.fire({
                 title: 'Cancelar Pedido',

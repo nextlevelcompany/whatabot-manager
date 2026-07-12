@@ -81,10 +81,14 @@ export default function CreateOpportunityPage() {
                 });
                 router.push('/opportunities/view');
             } else {
-                Swal.fire('Error', 'No se pudo guardar la oportunidad.', 'error');
+                const errData = await res.json().catch(() => ({}));
+                console.error("Backend error response:", errData);
+                const errMsg = errData.message || 'No se pudo guardar la oportunidad.';
+                Swal.fire('Error', errMsg, 'error');
             }
         } catch (error) {
-            Swal.fire('Error', 'Error de conexión.', 'error');
+            console.error("Connection error:", error);
+            Swal.fire('Error', 'Error de conexión: ' + error.message, 'error');
         } finally {
             setSaving(false);
         }
