@@ -14,52 +14,7 @@ const ContactAppHeader = ({ toggleSidebar, show, onAddNewContact, viewMode, setV
     return (
         <header className="contact-header">
             <div className="d-flex align-items-center">
-                <Dropdown>
-                    <Dropdown.Toggle as="a" className="contactapp-title link-dark" href="#" >
-                        <h1>Contactos</h1>
-                    </Dropdown.Toggle>
-                    <Dropdown.Menu>
-                        <Dropdown.Item>
-                            <span className="feather-icon dropdown-icon">
-                                <User />
-                            </span>
-                            <span>Todos los Contactos</span>
-                        </Dropdown.Item>
-                        <Dropdown.Item>
-                            <span className="feather-icon dropdown-icon">
-                                <Star />
-                            </span>
-                            <span>Importantes</span>
-                        </Dropdown.Item>
-                        <Dropdown.Item>
-                            <span className="feather-icon dropdown-icon">
-                                <Archive />
-                            </span>
-                            <span>Archivos</span>
-                        </Dropdown.Item>
-                        <Dropdown.Item>
-                            <span className="feather-icon dropdown-icon">
-                                <Edit />
-                            </span>
-                            <span>Pendiente</span>
-                        </Dropdown.Item>
-                        <Dropdown.Item>
-                            <span className="feather-icon dropdown-icon">
-                                <Trash2 />
-                            </span>
-                            <span>Elininar</span>
-                        </Dropdown.Item>
-                    </Dropdown.Menu>
-                </Dropdown>
-                <Dropdown className="ms-3">
-                    <Dropdown.Toggle size="sm" variant="outline-secondary" className="flex-shrink-0 d-lg-inline-block d-none">Crear Nuevo</Dropdown.Toggle>
-                    <Dropdown.Menu>
-                        <Dropdown.Item as={Link} href="/apps/contact/create-contact">Crear Contacto</Dropdown.Item>
-                        <Dropdown.Item>Add New Department</Dropdown.Item>
-                        <Dropdown.Item>Add Category</Dropdown.Item>
-                        <Dropdown.Item>Add New Tag</Dropdown.Item>
-                    </Dropdown.Menu>
-                </Dropdown>
+                {/* Cabecera simplificada para evitar duplicados */}
             </div>
             <div className="contact-options-wrap">
                 <Dropdown className="inline-block" >

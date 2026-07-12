@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import SimpleBar from 'simplebar-react';
-import { Button, Col, Form, Row, Badge, Spinner } from 'react-bootstrap';
+import { Button, Col, Form, Row, Badge, Spinner, InputGroup } from 'react-bootstrap';
 import Link from 'next/link';
 import HkDataTable from '@/components/@hk-data-table';
 import { Edit, Trash, Eye, List, Map, MessageSquare } from 'react-feather';
@@ -247,92 +247,98 @@ const ContactAppBody = ({ reloadRef, viewMode, setViewMode }) => {
         <div className="contact-body">
             <SimpleBar className="nicescroll-bar">
                 <div className="contact-list-view">
-                    {/* Toolbar */}
-                    <Row className="mb-3" >
-                        <Col xs={12} xxl={8} className="mb-3 mb-xxl-0">
-                            <div className="contact-toolbar-left flex-wrap gap-2">
-                                <Form.Group className="d-flex align-items-center mb-0">
-                                    <Form.Select size='sm' className="w-130p" value={filterTipo}
-                                        onChange={e => setFilterTipo(e.target.value)}>
-                                        <option value="">Todos los tipos</option>
-                                        <option value="NATURAL">👤 Persona Natural</option>
-                                        <option value="EMPRESA">🏢 Empresa</option>
-                                    </Form.Select>
-                                </Form.Group>
-                                <Form.Group className="d-xxl-flex d-none align-items-center mb-0">
-                                    <Form.Select size='sm' className="w-120p">
-                                        <option value={1}>Acciones lote</option>
-                                        <option value={2}>Editar</option>
-                                        <option value={3}>Eliminar</option>
-                                    </Form.Select>
-                                    <Button size="sm" variant="light" className="ms-2">Aplicar</Button>
-                                </Form.Group>
-                                <Form.Group className="d-xxl-flex d-none align-items-center mb-0">
-                                    <label className="flex-shrink-0 mb-0 me-2">Ordenar:</label>
-                                    <Form.Select size='sm' className="w-130p">
-                                        <option value={1}>Fecha Creado</option>
-                                        <option value={2}>Nombre</option>
-                                        <option value={3}>Frecuentes</option>
-                                    </Form.Select>
-                                </Form.Group>
-                                <Form.Select size="sm" className="d-flex align-items-center w-130p">
-                                    <option value={1}>Exportar CSV</option>
-                                    <option value={2}>Exportar PDF</option>
-                                </Form.Select>
-                                <span className="text-muted align-self-center ms-2" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
-                                    {filtered.length} contacto{filtered.length !== 1 ? 's' : ''}
-                                </span>
-                            </div>
-                        </Col>
-                        <Col xs={12} xxl={4}>
-                            <div className="contact-toolbar-right justify-content-start justify-content-xxl-end">
-                                <div className="dataTables_filter mb-0">
-                                    <Form.Label className="mb-0">
-                                        <Form.Control
-                                            size="sm"
-                                            type="search"
-                                            placeholder="Buscar..."
-                                            value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                            style={{ minWidth: '200px' }}
-                                        />
-                                    </Form.Label>
-                                </div>
-                                <div className="btn-group btn-group-sm ms-2">
-                                    <Button 
-                                        variant={viewMode === 'list' ? 'primary' : 'outline-secondary'} 
-                                        onClick={() => setViewMode('list')}
-                                        title="Vista de Lista"
-                                        className="d-flex align-items-center justify-content-center"
-                                        style={{ width: '36px', height: '32px' }}
-                                    >
-                                        <List size={16} />
-                                    </Button>
-                                    <Button 
-                                        variant={viewMode === 'map' ? 'primary' : 'outline-secondary'} 
-                                        onClick={() => setViewMode('map')}
-                                        title="Vista de Mapa"
-                                        className="d-flex align-items-center justify-content-center"
-                                        style={{ width: '36px', height: '32px' }}
-                                    >
-                                        <Map size={16} />
-                                    </Button>
-                                    <Button 
-                                        variant={viewMode === 'chats' ? 'primary' : 'outline-secondary'} 
-                                        onClick={() => setViewMode('chats')}
-                                        title="Vista de Chats en Vivo"
-                                        className="d-flex align-items-center justify-content-center"
-                                        style={{ width: '36px', height: '32px' }}
-                                    >
-                                        <MessageSquare size={16} />
-                                    </Button>
-                                </div>
-                                <Button size="sm" variant="outline-secondary" className="ms-2" onClick={loadContacts} title="Recargar">
-                                    🔄
+                    {/* Header Toolbar (Estilo similar a Ver Pedidos) */}
+                    <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 bg-white p-3 rounded shadow-sm border mb-4">
+                        <div className="d-flex align-items-center">
+                            <i className="bi bi-people-fill me-2 fs-4 text-primary"></i>
+                            <h4 className="mb-0 text-primary fw-bold">
+                                Directorio de Contactos
+                            </h4>
+                            <span className="badge bg-light text-muted border ms-3 fw-bold px-2 py-1 shadow-none" style={{ fontSize: '11px', borderRadius: '4px' }}>
+                                {filtered.length} contacto{filtered.length !== 1 ? 's' : ''}
+                            </span>
+                        </div>
+                        
+                        {/* Buscador Integrado (Lupa a la izquierda) */}
+                        <div style={{ maxWidth: '350px', flexGrow: 1 }} className="mx-lg-3">
+                            <InputGroup size="sm">
+                                <InputGroup.Text className="bg-white border-end-0">
+                                    <i className="bi bi-search text-muted"></i>
+                                </InputGroup.Text>
+                                <Form.Control
+                                    className="border-start-0 shadow-none"
+                                    placeholder="Buscar contacto, doc, tel o email..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                />
+                            </InputGroup>
+                        </div>
+
+                        {/* Filtros Rápidos (Tipo de Persona) y Selector de Vistas */}
+                        <div className="d-flex gap-2 align-items-center flex-wrap">
+                            <Form.Select 
+                                size="sm" 
+                                className="w-150p border shadow-none" 
+                                value={filterTipo}
+                                onChange={e => setFilterTipo(e.target.value)}
+                                style={{ width: '150px' }}
+                            >
+                                <option value="">Todos los tipos</option>
+                                <option value="NATURAL">👤 Persona Natural</option>
+                                <option value="EMPRESA">🏢 Empresa</option>
+                            </Form.Select>
+
+                            {/* Selector de Vistas */}
+                            <div className="btn-group bg-light border rounded p-1">
+                                <Button
+                                    variant={viewMode === 'list' ? 'dark' : 'light'}
+                                    size="sm"
+                                    className={`fw-bold px-3 border-0 py-1 d-flex align-items-center justify-content-center ${viewMode === 'list' ? 'text-white' : 'text-muted'}`}
+                                    onClick={() => setViewMode('list')}
+                                    title="Vista de Lista"
+                                    style={{ height: '28px' }}
+                                >
+                                    <List size={14} />
+                                </Button>
+                                <Button
+                                    variant={viewMode === 'map' ? 'dark' : 'light'}
+                                    size="sm"
+                                    className={`fw-bold px-3 border-0 py-1 d-flex align-items-center justify-content-center ${viewMode === 'map' ? 'text-white' : 'text-muted'}`}
+                                    onClick={() => setViewMode('map')}
+                                    title="Vista de Mapa"
+                                    style={{ height: '28px' }}
+                                >
+                                    <Map size={14} />
+                                </Button>
+                                <Button
+                                    variant={viewMode === 'chats' ? 'dark' : 'light'}
+                                    size="sm"
+                                    className={`fw-bold px-3 border-0 py-1 d-flex align-items-center justify-content-center ${viewMode === 'chats' ? 'text-white' : 'text-muted'}`}
+                                    onClick={() => setViewMode('chats')}
+                                    title="Vista de Chats en Vivo"
+                                    style={{ height: '28px' }}
+                                >
+                                    <MessageSquare size={14} />
                                 </Button>
                             </div>
-                        </Col>
-                    </Row>
+
+                            {/* Botón Recargar */}
+                            <Button size="sm" variant="outline-secondary" className="d-flex align-items-center justify-content-center" onClick={loadContacts} title="Recargar" style={{ height: '34px', width: '34px' }}>
+                                <i className="bi bi-arrow-clockwise fs-6"></i>
+                            </Button>
+
+                            {/* Botón Crear Contacto */}
+                            <Button 
+                                variant="primary" 
+                                size="sm" 
+                                className="fw-bold d-inline-flex align-items-center justify-content-center px-3" 
+                                href="/apps/contact/create-contact"
+                                style={{ height: '34px' }}
+                            >
+                                <i className="bi bi-plus-lg me-1"></i> CREAR CONTACTO
+                            </Button>
+                        </div>
+                    </div>
 
                     {loading ? (
                         <div className="text-center py-5">
