@@ -86,6 +86,20 @@ const getLocalDatePart = (dateStr, userTimezone = 'America/Lima') => {
     }
 };
 
+// Helper to dynamically load SheetJS (XLSX) from CDN
+const loadSheetJS = () => {
+    return new Promise((resolve) => {
+        if (typeof window !== 'undefined' && window.XLSX) {
+            resolve(window.XLSX);
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js';
+        script.onload = () => resolve(window.XLSX);
+        document.body.appendChild(script);
+    });
+};
+
 export default function OpportunitiesKanbanPage() {
     const [columns, setColumns] = useState([]);
     const [opportunities, setOpportunities] = useState([]);
@@ -745,6 +759,60 @@ export default function OpportunitiesKanbanPage() {
         })());
     };
 
+    const exportToExcel = async () => {
+        const filteredOpps = getFilteredOpportunities();
+        if (!filteredOpps || filteredOpps.length === 0) {
+            Swal.fire('Atención', 'No hay datos de oportunidades para exportar con los filtros actuales.', 'info');
+            return;
+        }
+
+        try {
+            const XLSX = await loadSheetJS();
+            const dataToExport = filteredOpps.map(o => {
+                const col = columns.find(c => c.id === o.etapa_id);
+                const colName = col ? col.nombre : 'Sin etapa';
+                return {
+                    'Título / Trato': o.titulo || '',
+                    'Contacto / Cliente': o.contacto_nombre_completo || 'Sin contacto',
+                    'Etapa': colName,
+                    'Valor Estimado (S/)': parseFloat(o.valor || 0),
+                    'Prioridad': o.prioridad || '',
+                    'Etiquetas': o.etiquetas || '',
+                    'Fecha Registro': o.created_at ? getLocalDatePart(o.created_at, settings.timezone) : '',
+                    'Notas': o.notas || ''
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Oportunidades");
+            
+            // Auto-fit columns
+            const maxLen = {};
+            dataToExport.forEach(row => {
+                Object.keys(row).forEach(key => {
+                    const val = String(row[key] || '');
+                    maxLen[key] = Math.max(maxLen[key] || key.length, val.length);
+                });
+            });
+            ws['!cols'] = Object.keys(maxLen).map(key => ({ wch: Math.min(30, maxLen[key] + 2) }));
+
+            const filename = 'Reporte_Oportunidades_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+            XLSX.writeFile(wb, filename);
+
+            Swal.fire({
+                icon: 'success',
+                title: '¡Descarga Iniciada!',
+                text: 'El reporte de oportunidades se ha exportado correctamente.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } catch (err) {
+            console.error("Error exporting to Excel", err);
+            Swal.fire('Error', 'No se pudo exportar a Excel.', 'error');
+        }
+    };
+
     const getPriorityBadgeColor = (p) => {
         if (p === 'Alta') return 'danger';
         if (p === 'Media') return 'warning';
@@ -852,6 +920,10 @@ export default function OpportunitiesKanbanPage() {
 
                         <Button variant="outline-dark" size="sm" onClick={loadKanbanData} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Sincronizar">
                             <i className="bi bi-arrow-clockwise"></i>
+                        </Button>
+
+                        <Button variant="outline-success" size="sm" onClick={exportToExcel} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Exportar a Excel">
+                            <i className="bi bi-download"></i>
                         </Button>
 
                         <Button variant="primary" size="sm" onClick={() => handleNewOpp()} className="fw-bold d-inline-flex align-items-center justify-content-center gap-1.5 px-3" style={{ height: '34px' }}>
