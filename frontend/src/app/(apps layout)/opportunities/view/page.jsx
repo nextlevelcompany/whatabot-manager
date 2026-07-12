@@ -910,21 +910,48 @@ export default function OpportunitiesKanbanPage() {
                         </div>
 
                         {/* Botones de Acción */}
-                        <Button variant="outline-secondary" size="sm" onClick={() => setShowTagsModal(true)} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Etiquetas">
-                            <i className="bi bi-tags-fill"></i>
-                        </Button>
-                        
-                        <Button variant="outline-primary" size="sm" onClick={handleNewColumn} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Nueva Etapa">
-                            <i className="bi bi-folder-plus"></i>
-                        </Button>
-
-                        <Button variant="outline-dark" size="sm" onClick={loadKanbanData} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Sincronizar">
-                            <i className="bi bi-arrow-clockwise"></i>
-                        </Button>
-
-                        <Button variant="outline-success" size="sm" onClick={exportToExcel} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Exportar a Excel">
-                            <i className="bi bi-download"></i>
-                        </Button>
+                        <div className="btn-group bg-light border rounded p-1" style={{ height: '34px' }}>
+                            <Button
+                                variant="light"
+                                size="sm"
+                                className="d-flex align-items-center fw-bold border-0 text-muted px-2.5"
+                                onClick={() => setShowTagsModal(true)}
+                                style={{ height: '24px' }}
+                                title="Etiquetas"
+                            >
+                                <i className="bi bi-tags-fill"></i>
+                            </Button>
+                            <Button
+                                variant="light"
+                                size="sm"
+                                className="d-flex align-items-center fw-bold border-0 text-muted px-2.5"
+                                onClick={handleNewColumn}
+                                style={{ height: '24px' }}
+                                title="Nueva Etapa"
+                            >
+                                <i className="bi bi-folder-plus"></i>
+                            </Button>
+                            <Button
+                                variant="light"
+                                size="sm"
+                                className="d-flex align-items-center fw-bold border-0 text-muted px-2.5"
+                                onClick={loadKanbanData}
+                                style={{ height: '24px' }}
+                                title="Sincronizar"
+                            >
+                                <i className="bi bi-arrow-clockwise"></i>
+                            </Button>
+                            <Button
+                                variant="light"
+                                size="sm"
+                                className="d-flex align-items-center fw-bold border-0 text-muted px-2.5"
+                                onClick={exportToExcel}
+                                style={{ height: '24px' }}
+                                title="Exportar a Excel"
+                            >
+                                <i className="bi bi-download"></i>
+                            </Button>
+                        </div>
 
                         <Button variant="primary" size="sm" onClick={() => handleNewOpp()} className="fw-bold d-inline-flex align-items-center justify-content-center gap-1.5 px-3" style={{ height: '34px' }}>
                             <i className="bi bi-plus-lg"></i> NUEVA OPORTUNIDAD
