@@ -89,6 +89,9 @@ const getLocalDatePart = (dateStr, userTimezone = 'America/Lima') => {
 export default function OpportunitiesKanbanPage() {
     const [columns, setColumns] = useState([]);
     const [opportunities, setOpportunities] = useState([]);
+    const [viewMode, setViewMode] = useState('kanban'); // 'kanban' | 'list'
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
     const [tags, setTags] = useState([]);
     const [contacts, setContacts] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -235,6 +238,10 @@ export default function OpportunitiesKanbanPage() {
     useEffect(() => {
         loadKanbanData();
     }, []);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, filterPriority, filterTag, filterDesde, filterHasta, viewMode]);
 
     // Drag and Drop implementation using HTML5 DND
     const handleDragStart = (e, oppId) => {
@@ -553,8 +560,9 @@ export default function OpportunitiesKanbanPage() {
         }
     };
 
-    const handleDeleteOpp = () => {
-        if (!oppForm.id) return;
+    const handleDeleteOpp = (targetOpp = null) => {
+        const idToDelete = targetOpp ? targetOpp.id : oppForm.id;
+        if (!idToDelete) return;
         Swal.fire({
             title: '¿Eliminar Oportunidad?',
             text: 'Se borrarán permanentemente todos los datos comerciales.',
@@ -565,7 +573,7 @@ export default function OpportunitiesKanbanPage() {
         }).then(async (result) => {
             if (result.isConfirmed) {
                 try {
-                    const res = await fetch(`${API_BASE}/api/opportunities/${oppForm.id}`, { method: 'DELETE' });
+                    const res = await fetch(`${API_BASE}/api/opportunities/${idToDelete}`, { method: 'DELETE' });
                     if (res.ok) {
                         setShowOppModal(false);
                         loadKanbanData();
@@ -713,6 +721,26 @@ export default function OpportunitiesKanbanPage() {
         return getColumnOpps(columnId).reduce((sum, o) => sum + parseFloat(o.valor), 0.0);
     };
 
+    const getFilteredOpportunities = () => {
+        return opportunities.filter(o => (
+            searchTerm === '' ||
+            o.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (o.contacto_nombre_completo && o.contacto_nombre_completo.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (o.etiquetas && o.etiquetas.toLowerCase().includes(searchTerm.toLowerCase()))
+        ) && (
+            filterPriority === '' || o.prioridad === filterPriority
+        ) && (
+            filterTag === '' || (o.etiquetas && o.etiquetas.split(',').map(t => t.trim()).includes(filterTag))
+        ) && (() => {
+            if (!filterDesde && !filterHasta) return true;
+            const oppDate = o.created_at ? getLocalDatePart(o.created_at, settings.timezone) : '';
+            if (!oppDate) return false;
+            if (filterDesde && oppDate < filterDesde) return false;
+            if (filterHasta && oppDate > filterHasta) return false;
+            return true;
+        })());
+    };
+
     const getPriorityBadgeColor = (p) => {
         if (p === 'Alta') return 'danger';
         if (p === 'Media') return 'warning';
@@ -785,16 +813,40 @@ export default function OpportunitiesKanbanPage() {
 
                     {/* Acciones Rápidas */}
                     <div className="d-flex gap-2 align-items-center flex-wrap">
+                        {/* Selector de Vista (Kanban / Lista) */}
+                        <div className="btn-group bg-light border rounded p-1" style={{ height: '34px' }}>
+                            <Button
+                                variant={viewMode === 'kanban' ? 'dark' : 'light'}
+                                size="sm"
+                                className={`d-flex align-items-center fw-bold px-3 border-0 ${viewMode === 'kanban' ? 'text-white' : 'text-muted'}`}
+                                onClick={() => setViewMode('kanban')}
+                                style={{ height: '24px' }}
+                                title="Vista Kanban"
+                            >
+                                <i className="bi bi-columns-gap"></i>
+                            </Button>
+                            <Button
+                                variant={viewMode === 'list' ? 'dark' : 'light'}
+                                size="sm"
+                                className={`d-flex align-items-center fw-bold px-3 border-0 ${viewMode === 'list' ? 'text-white' : 'text-muted'}`}
+                                onClick={() => setViewMode('list')}
+                                style={{ height: '24px' }}
+                                title="Vista Lista"
+                            >
+                                <i className="bi bi-list-task"></i>
+                            </Button>
+                        </div>
+
                         {/* Botones de Acción */}
-                        <Button variant="outline-secondary" size="sm" onClick={() => setShowTagsModal(true)} className="fw-semibold d-inline-flex align-items-center justify-content-center gap-1.5" style={{ height: '34px' }}>
-                            <i className="bi bi-tags-fill"></i> Etiquetas
+                        <Button variant="outline-secondary" size="sm" onClick={() => setShowTagsModal(true)} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Etiquetas">
+                            <i className="bi bi-tags-fill"></i>
                         </Button>
                         
-                        <Button variant="outline-primary" size="sm" onClick={handleNewColumn} className="fw-semibold d-inline-flex align-items-center justify-content-center gap-1.5" style={{ height: '34px' }}>
-                            <i className="bi bi-folder-plus"></i> Nueva Etapa
+                        <Button variant="outline-primary" size="sm" onClick={handleNewColumn} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Nueva Etapa">
+                            <i className="bi bi-folder-plus"></i>
                         </Button>
 
-                        <Button variant="outline-dark" size="sm" onClick={loadKanbanData} className="fw-semibold d-inline-flex align-items-center justify-content-center gap-1.5" style={{ height: '34px' }} title="Sincronizar">
+                        <Button variant="outline-dark" size="sm" onClick={loadKanbanData} className="fw-semibold d-inline-flex align-items-center justify-content-center" style={{ height: '34px', width: '34px' }} title="Sincronizar">
                             <i className="bi bi-arrow-clockwise"></i>
                         </Button>
 
@@ -982,13 +1034,176 @@ export default function OpportunitiesKanbanPage() {
                         </Col>
                     )}
 
-                    {/* Content Panel (Kanban Board) */}
+                    {/* Content Panel (Kanban Board / List View) */}
                     <Col lg={sidebarCollapsed ? 12 : 9} className="mb-4">
                         {loading ? (
                             <div className="text-center py-5">
                                 <Spinner animation="border" />
                                 <p className="mt-2 text-muted">Cargando embudo CRM...</p>
                             </div>
+                        ) : viewMode === 'list' ? (
+                            <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white">
+                                <Table hover responsive className="align-middle mb-0 text-nowrap">
+                                    <thead className="table-light text-muted font-size-12">
+                                        <tr>
+                                            <th className="ps-4">Título / Trato</th>
+                                            <th>Contacto / Cliente</th>
+                                            <th>Etapa</th>
+                                            <th>Valor Estimado</th>
+                                            <th>Prioridad</th>
+                                            <th>Etiquetas</th>
+                                            <th>Fecha Registro</th>
+                                            <th className="text-end pe-4">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="font-size-13">
+                                        {getFilteredOpportunities().length === 0 ? (
+                                            <tr>
+                                                <td colSpan={8} className="text-center py-5 text-muted">
+                                                    No se encontraron oportunidades.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            getFilteredOpportunities().slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(o => {
+                                                const col = columns.find(c => c.id === o.etapa_id);
+                                                const isWon = col ? col.es_ganada : false;
+                                                const colName = col ? col.nombre : 'Sin etapa';
+                                                const stageColors = ['primary', 'warning', 'info', 'violet', 'dark', 'success', 'danger'];
+                                                const stageColor = stageColors[(o.etapa_id || 0) % stageColors.length];
+
+                                                return (
+                                                    <tr key={o.id}>
+                                                        <td className="ps-4">
+                                                            <div className="d-flex align-items-center gap-1">
+                                                                {isWon && <span className="text-success" title="Ganada y Bloqueada">🔒</span>}
+                                                                <strong 
+                                                                    className="text-dark hover-text-primary" 
+                                                                    style={{ cursor: 'pointer', fontSize: '13.5px' }}
+                                                                    onClick={() => {
+                                                                        if (isWon) {
+                                                                            Swal.fire({
+                                                                                icon: 'info',
+                                                                                title: 'Oportunidad Ganada',
+                                                                                text: 'Esta oportunidad ya ha sido ganada y convertida en pedido. Está bloqueada para modificaciones.',
+                                                                                confirmButtonText: 'Entendido'
+                                                                            });
+                                                                            return;
+                                                                        }
+                                                                        handleEditOpp(o);
+                                                                    }}
+                                                                >
+                                                                    {o.titulo}
+                                                                </strong>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            {o.contacto_nombre_completo ? (
+                                                                <Link 
+                                                                    href={`/apps/contact/view-contact?id=${o.contacto_id}`}
+                                                                    className="text-dark fw-medium text-decoration-none hover-text-primary"
+                                                                >
+                                                                    👤 {o.contacto_nombre_completo}
+                                                                </Link>
+                                                            ) : (
+                                                                <span className="text-muted">Sin contacto</span>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            <Badge bg={isWon ? 'success' : stageColor} className={isWon ? 'text-white border-0' : `bg-soft-${stageColor} text-${stageColor} border-0`}>
+                                                                {isWon ? `🏆 ${colName}` : colName}
+                                                            </Badge>
+                                                        </td>
+                                                        <td>
+                                                            <span className="fw-bold text-dark">S/ {parseFloat(o.valor || 0).toFixed(2)}</span>
+                                                        </td>
+                                                        <td>
+                                                            <span className={`badge ${
+                                                                isWon ? 'bg-secondary text-white' : o.prioridad === 'Alta' ? 'bg-danger-soft text-danger border border-danger-soft' : o.prioridad === 'Media' ? 'bg-warning-soft text-warning border border-warning-soft' : 'bg-success-soft text-success border border-success-soft'
+                                                            }`} style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '4px' }}>
+                                                                {o.prioridad}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <div className="d-flex flex-wrap gap-1">
+                                                                {o.etiquetas ? o.etiquetas.split(',').map((t, idx) => (
+                                                                    <Badge key={idx} bg="light" className="text-muted border">
+                                                                        {t.trim()}
+                                                                    </Badge>
+                                                                )) : (
+                                                                    <span className="text-muted">-</span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <span className="text-muted">{formatDate(o.created_at, settings.timezone)}</span>
+                                                        </td>
+                                                        <td className="text-end pe-4">
+                                                            <div className="d-flex justify-content-end gap-1.5">
+                                                                <Button 
+                                                                    variant="outline-light" 
+                                                                    size="xs" 
+                                                                    className="btn-icon p-1 border-0" 
+                                                                    onClick={() => {
+                                                                        if (isWon) {
+                                                                            Swal.fire({
+                                                                                icon: 'info',
+                                                                                title: 'Oportunidad Ganada',
+                                                                                text: 'Esta oportunidad ya ha sido ganada y convertida en pedido. Está bloqueada para modificaciones.',
+                                                                                confirmButtonText: 'Entendido'
+                                                                            });
+                                                                            return;
+                                                                        }
+                                                                        handleEditOpp(o);
+                                                                    }}
+                                                                    title="Editar"
+                                                                >
+                                                                    <i className="bi bi-pencil-fill text-muted"></i>
+                                                                </Button>
+                                                                <Button 
+                                                                    variant="outline-light" 
+                                                                    size="xs" 
+                                                                    className="btn-icon p-1 border-0" 
+                                                                    onClick={() => handleDeleteOpp(o)}
+                                                                    title="Eliminar"
+                                                                >
+                                                                    <i className="bi bi-trash-fill text-danger"></i>
+                                                                </Button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </Table>
+                                {/* Paginación del Modo Lista */}
+                                <div className="d-flex justify-content-between align-items-center p-3 bg-light border-top">
+                                    <div className="text-muted small">
+                                        Mostrando {getFilteredOpportunities().length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, getFilteredOpportunities().length)} de {getFilteredOpportunities().length} oportunidades
+                                    </div>
+                                    <div className="d-flex gap-2">
+                                        <Button 
+                                            variant="outline-secondary" 
+                                            size="sm" 
+                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                            disabled={currentPage === 1}
+                                        >
+                                            Anterior
+                                        </Button>
+                                        <span className="align-self-center text-muted fw-bold small px-2">
+                                            Pág. {currentPage} de {Math.max(1, Math.ceil(getFilteredOpportunities().length / itemsPerPage))}
+                                        </span>
+                                        <Button 
+                                            variant="outline-secondary" 
+                                            size="sm" 
+                                            onClick={() => setCurrentPage(p => Math.min(Math.ceil(getFilteredOpportunities().length / itemsPerPage), p + 1))}
+                                            disabled={currentPage === Math.ceil(getFilteredOpportunities().length / itemsPerPage) || getFilteredOpportunities().length === 0}
+                                        >
+                                            Siguiente
+                                        </Button>
+                                    </div>
+                                </div>
+                            </Card>
                         ) : (
                             <SimpleBar className="w-100">
                                 <div className="d-flex gap-3 pb-3 align-items-stretch" style={{ minHeight: '65vh', overflowX: 'auto', minWidth: `${columns.length * 280}px` }}>
