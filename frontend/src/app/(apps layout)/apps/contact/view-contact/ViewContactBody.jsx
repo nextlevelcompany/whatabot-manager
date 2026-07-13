@@ -8,6 +8,114 @@ import InteractiveMap from '../InteractiveMap';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 
+const parseMessageMedia = (msgText, API_BASE) => {
+    let images = [];
+    let audios = [];
+    let videos = [];
+    let displayText = msgText || '';
+
+    if (!msgText) return { images, audios, videos, displayText };
+
+    // Formato heredado: [IMAGE]/path, [AUDIO]/path, [VIDEO]/path
+    if (msgText.startsWith('[IMAGE]')) {
+        const paths = msgText.substring(7).split(',');
+        paths.forEach(p => {
+            let clean = p.trim();
+            if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+            images.push(clean.startsWith('http') ? clean : `${API_BASE}${clean}`);
+        });
+        return { images, audios, videos, displayText: '' };
+    }
+    if (msgText.startsWith('[AUDIO]')) {
+        const paths = msgText.substring(7).split(',');
+        paths.forEach(p => {
+            let clean = p.trim();
+            if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+            audios.push(clean.startsWith('http') ? clean : `${API_BASE}${clean}`);
+        });
+        return { images, audios, videos, displayText: '' };
+    }
+    if (msgText.startsWith('[VIDEO]')) {
+        const paths = msgText.substring(7).split(',');
+        paths.forEach(p => {
+            let clean = p.trim();
+            if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+            videos.push(clean.startsWith('http') ? clean : `${API_BASE}${clean}`);
+        });
+        return { images, audios, videos, displayText: '' };
+    }
+
+    // Formato estructurado: [MEDIA:tipo] id=... url=...
+    const mediaTagRegex = /\[MEDIA:(image|audio|video)\]/i;
+    const match = msgText.match(mediaTagRegex);
+    if (match) {
+        const type = match[1].toLowerCase();
+        const tagIndex = msgText.indexOf(match[0]);
+        const textBefore = msgText.substring(0, tagIndex).trim();
+        const textAfter = msgText.substring(tagIndex + match[0].length).trim();
+
+        let idsStr = '';
+        let urlsStr = '';
+
+        const idIndex = textAfter.indexOf('id=');
+        const urlIndex = textAfter.indexOf('url=');
+
+        if (idIndex !== -1 && urlIndex !== -1) {
+            if (idIndex < urlIndex) {
+                idsStr = textAfter.substring(idIndex + 3, urlIndex).trim();
+                urlsStr = textAfter.substring(urlIndex + 4).trim();
+            } else {
+                urlsStr = textAfter.substring(urlIndex + 4, idIndex).trim();
+                idsStr = textAfter.substring(idIndex + 3).trim();
+            }
+        } else if (idIndex !== -1) {
+            idsStr = textAfter.substring(idIndex + 3).trim();
+        } else if (urlIndex !== -1) {
+            urlsStr = textAfter.substring(urlIndex + 4).trim();
+        }
+
+        // Si id empieza con http (como pasa con la promo), tratarlo como url
+        if (idsStr.startsWith('http')) {
+            if (!urlsStr) {
+                urlsStr = idsStr;
+                idsStr = '';
+            }
+        }
+
+        displayText = textBefore;
+
+        if (urlsStr) {
+            const urls = urlsStr.split(',');
+            urls.forEach(u => {
+                let clean = u.trim();
+                if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+                if (clean) {
+                    const finalUrl = clean.startsWith('http') ? clean : `${API_BASE}${clean}`;
+                    if (type === 'image') images.push(finalUrl);
+                    else if (type === 'audio') audios.push(finalUrl);
+                    else if (type === 'video') videos.push(finalUrl);
+                }
+            });
+        }
+
+        if (idsStr) {
+            const ids = idsStr.split(',');
+            ids.forEach(idVal => {
+                const idClean = idVal.trim();
+                if (!idClean) return;
+                if (/^\d+$/.test(idClean)) {
+                    const finalUrl = `${API_BASE}/api/productos/${idClean}/imagen`;
+                    if (type === 'image') images.push(finalUrl);
+                    else if (type === 'audio') audios.push(finalUrl);
+                    else if (type === 'video') videos.push(finalUrl);
+                }
+            });
+        }
+    }
+    console.log("Parsed media in ViewContactBody:", { images, audios, videos, displayText, rawText: msgText });
+    return { images, audios, videos, displayText };
+};
+
 const ViewContactBody = ({ setContactName }) => {
     const searchParams = useSearchParams();
     const id = searchParams.get('id');
@@ -879,7 +987,7 @@ const ViewContactBody = ({ setContactName }) => {
         : [];
 
     return (
-        <div className="view-contact-body-wrap">
+        <div className="view-contact-body-wrap" style={{ width: '100%' }}>
             {/* Barra de Sub-Cabecera (Volver + Indicadores) */}
             <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 py-2 border-bottom">
                 <Link href="/apps/contact/contact-list" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
@@ -907,7 +1015,7 @@ const ViewContactBody = ({ setContactName }) => {
 
             <Row className="gx-4">
                 {/* Columna Izquierda (70%) */}
-                <Col lg={8} className="mb-4">
+                <Col md={8} className="mb-4">
                     
                     {/* Card de Identidad */}
                     <Card className="border rounded shadow-sm p-4 mb-4">
@@ -1489,7 +1597,7 @@ const ViewContactBody = ({ setContactName }) => {
                 </Col>
 
                 {/* Columna Derecha (30%) */}
-                <Col lg={4} className="mb-4">
+                <Col md={4} className="mb-4">
                     
                     {/* Card de Notas Internas y WhatsApp */}
                     <Card className="border rounded shadow-sm mb-4" style={{ minHeight: '642px', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
@@ -1549,49 +1657,7 @@ const ViewContactBody = ({ setContactName }) => {
                                 <div className="p-3" style={{ height: '500px', overflowY: 'auto', backgroundColor: '#efeae2', backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")' }}>
                                     <div className="d-flex flex-column gap-2">
                                         {wspMessages.map((msg, idx) => {
-                                            let isImage = false;
-                                            let isAudio = false;
-                                            let isVideo = false;
-                                            let mediaUrl = '';
-                                            let displayText = msg.text || '';
-
-                                            if (msg.text) {
-                                                if (msg.text.startsWith('[IMAGE]')) {
-                                                    isImage = true;
-                                                    const path = msg.text.substring(7);
-                                                    mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
-                                                    displayText = '';
-                                                } else if (msg.text.startsWith('[AUDIO]')) {
-                                                    isAudio = true;
-                                                    const path = msg.text.substring(7);
-                                                    mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
-                                                    displayText = '';
-                                                } else if (msg.text.startsWith('[VIDEO]')) {
-                                                    isVideo = true;
-                                                    const path = msg.text.substring(7);
-                                                    mediaUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
-                                                    displayText = '';
-                                                } else {
-                                                    const mediaRegex = /\[MEDIA:(image|audio|video)\](?: id=([^\s\]]+))?(?: url=([^\s\]]+))?/;
-                                                    const match = msg.text.match(mediaRegex);
-                                                    if (match) {
-                                                        const type = match[1];
-                                                        const id = match[2];
-                                                        const url = match[3];
-
-                                                        if (type === 'image') isImage = true;
-                                                        else if (type === 'audio') isAudio = true;
-                                                        else if (type === 'video') isVideo = true;
-
-                                                        if (url) {
-                                                            mediaUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
-                                                        } else if (id) {
-                                                            mediaUrl = `${API_BASE}/api/productos/${id}/imagen`;
-                                                        }
-                                                        displayText = msg.text.replace(mediaRegex, '').trim();
-                                                    }
-                                                }
-                                            }
+                                            const { images, audios, videos, displayText } = parseMessageMedia(msg.text, API_BASE);
 
                                             return (
                                                 <div 
@@ -1601,42 +1667,52 @@ const ViewContactBody = ({ setContactName }) => {
                                                         maxWidth: '85%', 
                                                         fontSize: '0.82rem', 
                                                         backgroundColor: msg.sender === 'me' ? '#d9fdd3' : '#ffffff',
-                                                        border: msg.sender === 'me' ? 'none' : '1px solid #cbd5e1'
+                                                        border: msg.sender === 'me' ? 'none' : '1px solid #cbd5e1',
+                                                        wordBreak: 'break-word'
                                                     }}
                                                 >
-                                                    {isImage && (
-                                                        <div className="d-flex flex-column">
-                                                            <img 
-                                                                src={mediaUrl} 
-                                                                alt="WhatsApp Imagen" 
-                                                                className="img-fluid rounded mb-1 border" 
-                                                                style={{ maxHeight: '160px', objectFit: 'contain', cursor: 'pointer', backgroundColor: '#f1f5f9' }}
-                                                                onClick={() => window.open(mediaUrl, '_blank')}
-                                                            />
+                                                    {images.length > 0 && (
+                                                        <div className="d-flex flex-wrap gap-2 mb-1">
+                                                            {images.map((imgUrl, i) => (
+                                                                <img 
+                                                                    key={i}
+                                                                    src={imgUrl} 
+                                                                    alt="WhatsApp Imagen" 
+                                                                    className="img-fluid rounded border" 
+                                                                    style={{ maxHeight: '160px', maxWidth: images.length > 1 ? '160px' : '100%', objectFit: 'contain', cursor: 'pointer', backgroundColor: '#f1f5f9' }}
+                                                                    onClick={() => window.open(imgUrl, '_blank')}
+                                                                />
+                                                            ))}
                                                         </div>
                                                     )}
-                                                    {isAudio && (
-                                                        <div className="d-flex flex-column py-1">
-                                                            <audio 
-                                                                src={mediaUrl} 
-                                                                controls 
-                                                                className="w-100" 
-                                                                style={{ minWidth: '220px', height: '40px' }}
-                                                            />
+                                                    {audios.length > 0 && (
+                                                        <div className="d-flex flex-column gap-2 py-1 mb-1">
+                                                            {audios.map((audUrl, i) => (
+                                                                <audio 
+                                                                    key={i}
+                                                                    src={audUrl} 
+                                                                    controls 
+                                                                    className="w-100" 
+                                                                    style={{ minWidth: '220px', height: '40px' }}
+                                                                />
+                                                            ))}
                                                         </div>
                                                     )}
-                                                    {isVideo && (
-                                                        <div className="d-flex flex-column">
-                                                            <video 
-                                                                src={mediaUrl} 
-                                                                controls 
-                                                                className="img-fluid rounded mb-1 border" 
-                                                                style={{ maxHeight: '240px', backgroundColor: '#000000' }}
-                                                            />
+                                                    {videos.length > 0 && (
+                                                        <div className="d-flex flex-column gap-2 mb-1">
+                                                            {videos.map((vidUrl, i) => (
+                                                                <video 
+                                                                    key={i}
+                                                                    src={vidUrl} 
+                                                                    controls 
+                                                                    className="img-fluid rounded border" 
+                                                                    style={{ maxHeight: '240px', backgroundColor: '#000000' }}
+                                                                />
+                                                            ))}
                                                         </div>
                                                     )}
                                                     {displayText && (
-                                                        <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap' }}>{displayText}</p>
+                                                        <p className="mb-1 text-dark" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{displayText}</p>
                                                     )}
                                                     <div className="d-flex align-items-center justify-content-end gap-1" style={{ marginTop: '2px' }}>
                                                         <small className="text-muted" style={{ fontSize: '0.6rem' }}>{msg.time}</small>

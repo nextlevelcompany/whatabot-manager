@@ -61,7 +61,7 @@ const SidebarHeader = () => {
                     }
                 }
             } catch (e) {
-                console.error("Error loading logo/favicon in SidebarHeader", e);
+                console.warn("No se pudo cargar el logo/favicon en SidebarHeader (servidor reiniciándose o fuera de línea):", e.message || e);
             }
         };
         fetchLogo();

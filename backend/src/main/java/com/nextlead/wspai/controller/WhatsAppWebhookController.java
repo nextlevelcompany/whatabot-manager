@@ -43,7 +43,7 @@ public class WhatsAppWebhookController {
     private final GeminiService geminiService;
     private final AiConfigDao aiConfigDao;
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     @Autowired
     public WhatsAppWebhookController(WhatsAppMessageDao messageDao, 
@@ -53,7 +53,8 @@ public class WhatsAppWebhookController {
                                      SettingsService settingsService,
                                      ContactDao contactDao,
                                      AiConfigDao aiConfigDao,
-                                     JdbcTemplate jdbcTemplate) {
+                                     JdbcTemplate jdbcTemplate,
+                                     ObjectMapper objectMapper) {
         this.messageDao = messageDao;
         this.messagingTemplate = messagingTemplate;
         this.apiService = apiService;
@@ -62,6 +63,7 @@ public class WhatsAppWebhookController {
         this.contactDao = contactDao;
         this.aiConfigDao = aiConfigDao;
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     private String getVerifyToken() {
@@ -295,6 +297,91 @@ public class WhatsAppWebhookController {
                                 }
                             }
 
+                             // Guardar dirección si es un link de Google Maps en un mensaje de texto
+                             if ("text".equals(type) && textBody != null && contactOpt.isPresent() &&
+                                 (textBody.contains("google.com/maps") || textBody.contains("maps.google.com") || textBody.contains("maps.app.goo.gl"))) {
+                                 try {
+                                     Double lat = null;
+                                     Double lng = null;
+                                     String addressText = "Enlace Google Maps";
+                                     String districtName = null;
+                                     String resolvedUbigeo = null;
+                                     
+                                     // Intentar extraer coordenadas del URL usando regex
+                                     java.util.regex.Matcher coordMatcher = java.util.regex.Pattern.compile("/@(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)").matcher(textBody);
+                                     if (coordMatcher.find()) {
+                                         lat = Double.parseDouble(coordMatcher.group(1));
+                                         lng = Double.parseDouble(coordMatcher.group(2));
+                                     } else {
+                                         java.util.regex.Matcher qMatcher = java.util.regex.Pattern.compile("[?&]q=(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)").matcher(textBody);
+                                         if (qMatcher.find()) {
+                                             lat = Double.parseDouble(qMatcher.group(1));
+                                             lng = Double.parseDouble(qMatcher.group(2));
+                                         }
+                                     }
+                                     
+                                     // Intentar extraer la dirección de búsqueda
+                                     java.util.regex.Matcher searchMatcher = java.util.regex.Pattern.compile("/maps/search/([^/&?#]+)").matcher(textBody);
+                                     if (searchMatcher.find()) {
+                                         String rawSearch = searchMatcher.group(1);
+                                         addressText = java.net.URLDecoder.decode(rawSearch, "UTF-8").replace("+", " ").trim();
+                                         
+                                         // Intentar resolver el distrito a partir del texto
+                                         String[] parts = addressText.split(",");
+                                         if (parts.length > 1) {
+                                             districtName = parts[parts.length - 1].trim();
+                                         } else {
+                                             String[] spaceParts = addressText.split(" ");
+                                             if (spaceParts.length > 1) {
+                                                 districtName = spaceParts[spaceParts.length - 1].trim();
+                                             }
+                                         }
+                                         
+                                         if (districtName != null && !districtName.isEmpty()) {
+                                             try {
+                                                 java.util.List<String> codes = jdbcTemplate.queryForList(
+                                                     "SELECT codigo_ubigeo FROM ubigeo_peru WHERE UPPER(distrito) = ? OR UPPER(distrito) LIKE ? ORDER BY codigo_ubigeo ASC LIMIT 1",
+                                                     String.class,
+                                                     districtName.toUpperCase(), "%" + districtName.toUpperCase() + "%"
+                                                 );
+                                                 if (!codes.isEmpty()) {
+                                                    resolvedUbigeo = codes.get(0);
+                                                 }
+                                             } catch (Exception uex) {
+                                                 logger.warn("No se pudo resolver ubigeo para distrito {} en link: {}", districtName, uex.getMessage());
+                                             }
+                                         }
+                                     }
+                                     
+                                     Long contactId = contactOpt.get().getId();
+                                     Integer count = jdbcTemplate.queryForObject(
+                                         "SELECT COUNT(*) FROM direcciones WHERE id_contacto = ? AND nombre_ubicacion = 'WhatsApp Link'",
+                                         Integer.class, contactId
+                                     );
+                                     
+                                     if (count != null && count > 0) {
+                                         jdbcTemplate.update(
+                                             "UPDATE direcciones SET direccion_completa = ?, codigo_ubigeo = ?, latitud = ?, longitud = ? " +
+                                             "WHERE id_contacto = ? AND nombre_ubicacion = 'WhatsApp Link'",
+                                             addressText, resolvedUbigeo, lat, lng, contactId
+                                         );
+                                         logger.info("Actualizada dirección desde enlace Google Maps para el contacto ID: {}", contactId);
+                                     } else {
+                                         jdbcTemplate.update(
+                                             "INSERT INTO direcciones (id_contacto, nombre_ubicacion, codigo_ubigeo, direccion_completa, latitud, longitud) " +
+                                             "VALUES (?, ?, ?, ?, ?, ?)",
+                                             contactId, "WhatsApp Link", resolvedUbigeo, addressText, lat, lng
+                                         );
+                                         logger.info("Insertada nueva dirección desde enlace Google Maps para el contacto ID: {}", contactId);
+                                     }
+                                     
+                                     // También actualizar referencia en contacts para visualización general
+                                     jdbcTemplate.update("UPDATE contacts SET referencia = ? WHERE id = ?", addressText, contactId);
+                                 } catch (Exception e) {
+                                     logger.error("Error al procesar el enlace de Google Maps para el contacto: ", e);
+                                 }
+                             }
+
                             // Verificar palabras clave para derivación a humano (solo texto)
                             boolean isHumanFallback = "text".equals(type) && isHumanFallback(textBody);
 
@@ -430,6 +517,42 @@ public class WhatsAppWebhookController {
                 caption = firstNonBlank(decision.getCaption(), replyText);
                 needsHuman = decision.isNeedsHuman();
 
+                // Procesar y guardar información extraída por la IA (pedido, dirección, pago, etc.)
+                if (decision.getExtractedInfo() != null && !decision.getExtractedInfo().isNull() && contact != null) {
+                    processExtractedInfo(contact, decision.getExtractedInfo());
+                }
+
+                // Si la IA marca next_state como pedido_confirmado por confirmación del cliente
+                if (decision != null && "pedido_confirmado".equalsIgnoreCase(decision.getNextState()) && contact != null) {
+                    try {
+                        // 1. Buscar la oportunidad activa del contacto
+                        java.util.List<java.util.Map<String, Object>> activeOpps = jdbcTemplate.queryForList(
+                            "SELECT id FROM oportunidades WHERE contacto_id = ? " +
+                            "AND etapa_id NOT IN (SELECT id FROM kanban_columnas WHERE es_ganada = true OR es_perdida = true) " +
+                            "ORDER BY id DESC LIMIT 1",
+                            contact.getId()
+                        );
+                        
+                        if (!activeOpps.isEmpty()) {
+                            Long oppId = ((Number) activeOpps.get(0).get("id")).longValue();
+                            // Actualizar etapa de oportunidad a 5 (Ganada)
+                            jdbcTemplate.update("UPDATE oportunidades SET etapa_id = 5 WHERE id = ?", oppId);
+                            logger.info("Oportunidad ID {} marcada como GANADA automáticamente por confirmación de pedido.", oppId);
+                            
+                            // Convertir a pedido y pedido_detalles
+                            convertOpportunityToOrder(oppId);
+                        } else {
+                            logger.warn("No se encontró una oportunidad activa para el contacto ID {} al confirmar el pedido.", contact.getId());
+                        }
+                        
+                        // 2. Cambiar estado del lead a 'Pedido'
+                        jdbcTemplate.update("UPDATE contacts SET status = 'Pedido' WHERE id = ?", contact.getId());
+                        logger.info("Contacto ID {} cambiado a estado 'Pedido' por confirmación de la IA.", contact.getId());
+                    } catch (Exception e) {
+                        logger.error("Error al procesar la confirmación automática del pedido:", e);
+                    }
+                }
+
                 // SAFEGUARD: If intent is "promocion", automatically force promotion media if configured
                 if ("promocion".equalsIgnoreCase(decision.getIntent())) {
                     String globalPromoType = settingsService.getSetting("ai.products.promotion.media.type");
@@ -531,6 +654,23 @@ public class WhatsAppWebhookController {
                         }
 
                         String currentWamid = apiService.sendMediaMessage(clientPhone, currentId, mediaType, null, currentCaption);
+                        
+                        String dbText = (currentCaption != null ? currentCaption.trim() : "") + 
+                                        "\n[MEDIA:" + mediaType + "] id=" + (currentUrl != null && !currentUrl.isEmpty() ? currentUrl : currentId);
+                        
+                        WhatsAppMessage imgMsg = new WhatsAppMessage();
+                        imgMsg.setSender(ourNumber);
+                        imgMsg.setReceiver(clientPhone);
+                        imgMsg.setMessageText(dbText);
+                        imgMsg.setTimestamp(LocalDateTime.now());
+                        imgMsg.setStatus(currentWamid != null ? "SENT" : "FAILED");
+                        imgMsg.setWamid(currentWamid);
+                        messageDao.save(imgMsg);
+                        
+                        String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+                        messagingTemplate.convertAndSend("/topic/chat/" + last9, imgMsg);
+                        messagingTemplate.convertAndSend("/topic/chat/global-updates", imgMsg);
+
                         if (currentWamid != null) {
                             wamid = currentWamid; // Guardamos el último wamid
                             mediaSent = true;
@@ -555,6 +695,20 @@ public class WhatsAppWebhookController {
                         if (postText != null && !postText.trim().isEmpty()) {
                             try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
                             String postWamid = apiService.sendMessage(clientPhone, postText.trim());
+                            
+                            WhatsAppMessage postMsg = new WhatsAppMessage();
+                            postMsg.setSender(ourNumber);
+                            postMsg.setReceiver(clientPhone);
+                            postMsg.setMessageText(postText.trim());
+                            postMsg.setTimestamp(LocalDateTime.now());
+                            postMsg.setStatus(postWamid != null ? "SENT" : "FAILED");
+                            postMsg.setWamid(postWamid);
+                            messageDao.save(postMsg);
+                            
+                            String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+                            messagingTemplate.convertAndSend("/topic/chat/" + last9, postMsg);
+                            messagingTemplate.convertAndSend("/topic/chat/global-updates", postMsg);
+
                             if (postWamid != null) {
                                 wamid = postWamid;
                             }
@@ -565,6 +719,19 @@ public class WhatsAppWebhookController {
 
             if (!mediaSent && replyText != null && !replyText.trim().isEmpty()) {
                 wamid = apiService.sendMessage(clientPhone, replyText.trim());
+                
+                WhatsAppMessage textMsg = new WhatsAppMessage();
+                textMsg.setSender(ourNumber);
+                textMsg.setReceiver(clientPhone);
+                textMsg.setMessageText(replyText.trim());
+                textMsg.setTimestamp(LocalDateTime.now());
+                textMsg.setStatus(wamid != null ? "SENT" : "FAILED");
+                textMsg.setWamid(wamid);
+                messageDao.save(textMsg);
+                
+                String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+                messagingTemplate.convertAndSend("/topic/chat/" + last9, textMsg);
+                messagingTemplate.convertAndSend("/topic/chat/global-updates", textMsg);
             }
 
             if (needsHuman) {
@@ -576,26 +743,7 @@ public class WhatsAppWebhookController {
                 sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Gemini marcó esta conversación para atención humana. Chatbot desactivado para este contacto.", ourNumber);
             }
 
-            String storedMessageText = buildStoredMessageText(replyText, mediaSent, mediaType, imageUrl, mediaId);
-            if (storedMessageText == null || storedMessageText.trim().isEmpty()) {
-                storedMessageText = aiResponse;
-            }
-
-            WhatsAppMessage aiMessage = new WhatsAppMessage();
-            aiMessage.setSender(ourNumber);
-            aiMessage.setReceiver(clientPhone);
-            aiMessage.setMessageText(storedMessageText);
-            aiMessage.setTimestamp(LocalDateTime.now());
-            aiMessage.setStatus(wamid != null ? "SENT" : "FAILED");
-            aiMessage.setWamid(wamid);
-
-            messageDao.save(aiMessage);
-            logger.info("Respuesta de la IA guardada y enviada a {} con estado: {}", clientPhone, aiMessage.getStatus());
-
-            String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
-            messagingTemplate.convertAndSend("/topic/chat/" + last9, aiMessage);
-            messagingTemplate.convertAndSend("/topic/chat/global-updates", aiMessage);
-            logger.info("Respuesta de la IA transmitida en tiempo real al chat de la pantalla.");
+            logger.info("Respuesta de la IA procesada y enviada a {}", clientPhone);
 
             if (wamid == null) {
                 sendSystemAlert(clientPhone, "⚠️ *Alerta del Sistema:* Meta WhatsApp API no pudo enviar el mensaje. Verifica token, phone_number_id, saldo/permisos o validez del número.", ourNumber);
@@ -762,4 +910,366 @@ public class WhatsAppWebhookController {
             }
         }
     }
+
+    private void processExtractedInfo(Contact contact, JsonNode info) {
+        try {
+            logger.info("Procesando información extraída por la IA para el contacto ID {}: {}", contact.getId(), info);
+
+            // 1. Extraer nombre del cliente si corresponde
+            if (info.has("client_name") && !info.get("client_name").isNull()) {
+                String clientName = info.get("client_name").asText().trim();
+                if (!clientName.isEmpty() && !"null".equalsIgnoreCase(clientName)) {
+                    String currentName = (contact.getNombreDisplay() != null ? contact.getNombreDisplay() : "").trim();
+                    boolean isGeneric = currentName.isEmpty() 
+                        || currentName.toLowerCase().contains("whatsapp") 
+                        || currentName.toLowerCase().contains("nuevo")
+                        || currentName.length() <= 3;
+                    boolean isMoreComplete = clientName.length() > currentName.length() && clientName.contains(" ") && !currentName.contains(" ");
+                    
+                    if (isGeneric || isMoreComplete) {
+                        String firstName = clientName;
+                        String lastName = "";
+                        int spaceIdx = clientName.indexOf(" ");
+                        if (spaceIdx > 0) {
+                            firstName = clientName.substring(0, spaceIdx).trim();
+                            lastName = clientName.substring(spaceIdx).trim();
+                        }
+                        jdbcTemplate.update("UPDATE contacts SET nombres = ?, apellidos = ? WHERE id = ?", firstName, lastName, contact.getId());
+                        logger.info("Nombre de contacto ID {} actualizado a: {} {}", contact.getId(), firstName, lastName);
+                    }
+                }
+            }
+
+            // 1.1 Extraer DNI del cliente si corresponde
+            if (info.has("client_dni") && !info.get("client_dni").isNull()) {
+                String clientDni = info.get("client_dni").asText().trim();
+                // Limpiar caracteres no numéricos para DNI
+                clientDni = clientDni.replaceAll("\\D", "");
+                if (clientDni.length() == 8) {
+                    jdbcTemplate.update("UPDATE contacts SET numero_documento = ?, tipo_documento = 'DNI' WHERE id = ?", clientDni, contact.getId());
+                    logger.info("DNI/Documento de contacto ID {} actualizado a DNI: {}", contact.getId(), clientDni);
+                }
+            }
+
+            // 2. Extraer dirección
+            String district = null;
+            String street = null;
+            String reference = null;
+            if (info.has("address") && !info.get("address").isNull()) {
+                JsonNode addr = info.get("address");
+                if (addr.has("district") && !addr.get("district").isNull()) district = addr.get("district").asText().trim();
+                if (addr.has("street") && !addr.get("street").isNull()) street = addr.get("street").asText().trim();
+                if (addr.has("reference") && !addr.get("reference").isNull()) reference = addr.get("reference").asText().trim();
+            }
+
+            String resolvedUbigeo = null;
+            if (district != null && !district.trim().isEmpty()) {
+                try {
+                    String cleanDistrict = district.trim().toUpperCase();
+                    java.util.List<String> codes = jdbcTemplate.queryForList(
+                        "SELECT codigo_ubigeo FROM ubigeo_peru WHERE UPPER(distrito) = ? OR UPPER(distrito) LIKE ? ORDER BY codigo_ubigeo ASC LIMIT 1",
+                        String.class,
+                        cleanDistrict, "%" + cleanDistrict + "%"
+                    );
+                    if (!codes.isEmpty()) {
+                        resolvedUbigeo = codes.get(0);
+                    }
+                } catch (Exception e) {
+                    logger.warn("Error al intentar resolver ubigeo para distrito {}: {}", district, e.getMessage());
+                }
+            }
+
+            if ((district != null && !district.isEmpty()) || (street != null && !street.isEmpty())) {
+                district = (district == null || "null".equalsIgnoreCase(district)) ? "" : district;
+                street = (street == null || "null".equalsIgnoreCase(street)) ? "" : street;
+                reference = (reference == null || "null".equalsIgnoreCase(reference)) ? "" : reference;
+
+                // Verificar si ya existe una dirección asociada al contacto
+                Integer addrCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM direcciones WHERE id_contacto = ?", Integer.class, contact.getId());
+                if (addrCount == null || addrCount == 0) {
+                    jdbcTemplate.update("INSERT INTO direcciones (id_contacto, nombre_ubicacion, codigo_ubigeo, direccion_completa, referencia) VALUES (?, 'Entrega', ?, ?, ?)",
+                            contact.getId(), resolvedUbigeo, street, reference);
+                    logger.info("Dirección de entrega insertada para contacto ID {}: {}, ubigeo={} (Ref: {})", contact.getId(), street, resolvedUbigeo, reference);
+                } else {
+                    jdbcTemplate.update("UPDATE direcciones SET codigo_ubigeo = COALESCE(?, codigo_ubigeo), direccion_completa = COALESCE(NULLIF(?, ''), direccion_completa), referencia = COALESCE(NULLIF(?, ''), referencia) WHERE id_contacto = ?",
+                            resolvedUbigeo, street, reference, contact.getId());
+                    logger.info("Dirección de entrega actualizada para contacto ID {}: {}, ubigeo={} (Ref: {})", contact.getId(), street, resolvedUbigeo, reference);
+                }
+
+                // Actualizar la columna 'referencia' en 'contacts' para fallback
+                String formattedRef = (street + " " + district + " " + reference).trim();
+                if (!formattedRef.isEmpty()) {
+                    jdbcTemplate.update("UPDATE contacts SET referencia = ? WHERE id = ?", formattedRef, contact.getId());
+                }
+            }
+
+            // 3. Obtener Oportunidad Activa
+            java.util.List<java.util.Map<String, Object>> activeOpps = jdbcTemplate.queryForList(
+                "SELECT id, titulo, valor, productos_json, notas FROM oportunidades " +
+                "WHERE contacto_id = ? " +
+                "  AND etapa_id NOT IN (SELECT id FROM kanban_columnas WHERE es_ganada = true OR es_perdida = true) " +
+                "ORDER BY id DESC LIMIT 1",
+                contact.getId()
+            );
+
+            if (!activeOpps.isEmpty()) {
+                java.util.Map<String, Object> opp = activeOpps.get(0);
+                Long oppId = ((Number) opp.get("id")).longValue();
+                String currentNotas = opp.get("notas") != null ? opp.get("notas").toString() : "";
+                String currentProdJson = opp.get("productos_json") != null ? opp.get("productos_json").toString() : "[]";
+
+                // Extraer productos
+                if (info.has("products") && info.get("products").isArray() && info.get("products").size() > 0) {
+                    JsonNode productsNode = info.get("products");
+                    
+                    // Cargar productos del catálogo
+                    java.util.List<java.util.Map<String, Object>> dbProducts = jdbcTemplate.queryForList("SELECT id, nombre, precio_venta FROM productos WHERE activo = true");
+                    
+                    // Parsear productos existentes o inicializar lista
+                    java.util.List<java.util.Map<String, Object>> mappedProducts = new java.util.ArrayList<>();
+                    try {
+                        if (currentProdJson != null && !currentProdJson.trim().isEmpty() && !currentProdJson.trim().equals("[]")) {
+                            mappedProducts = objectMapper.readValue(currentProdJson, new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() {});
+                        }
+                    } catch (Exception ex) {
+                        logger.warn("Error parseando productos_json actual para oportunidad ID {}: {}", oppId, ex.getMessage());
+                    }
+
+                    boolean updatedAnyProduct = false;
+
+                    for (JsonNode prodNode : productsNode) {
+                        if (!prodNode.has("name") || prodNode.get("name").isNull()) continue;
+                        String extProdName = prodNode.get("name").asText().trim().toLowerCase();
+                        int extQty = prodNode.has("quantity") ? prodNode.get("quantity").asInt(1) : 1;
+
+                        String extProdNameNorm = normalizeString(extProdName);
+
+                        // Buscar coincidencia en DB
+                        java.util.Map<String, Object> matchedDbProd = null;
+                        for (java.util.Map<String, Object> dbProd : dbProducts) {
+                            String dbProdNameNorm = normalizeString(dbProd.get("nombre").toString());
+                            if (dbProdNameNorm.contains(extProdNameNorm) || extProdNameNorm.contains(dbProdNameNorm)) {
+                                matchedDbProd = dbProd;
+                                break;
+                            }
+                        }
+
+                        if (matchedDbProd != null) {
+                            Long matchedProdId = ((Number) matchedDbProd.get("id")).longValue();
+                            String matchedProdName = matchedDbProd.get("nombre").toString();
+                            double matchedProdPrice = ((Number) matchedDbProd.get("precio_venta")).doubleValue();
+
+                            // Verificar si ya existe en la oportunidad para actualizar cantidad
+                            int existIdx = -1;
+                            for (int i = 0; i < mappedProducts.size(); i++) {
+                                Number pIdNum = (Number) mappedProducts.get(i).get("id");
+                                if (pIdNum != null && pIdNum.longValue() == matchedProdId) {
+                                    existIdx = i;
+                                    break;
+                                }
+                            }
+
+                            if (existIdx != -1) {
+                                // Reemplazar cantidad (Gemini nos da la cantidad total actual del carrito o última modificación)
+                                mappedProducts.get(existIdx).put("cantidad", extQty);
+                            } else {
+                                // Añadir nuevo
+                                java.util.Map<String, Object> newProd = new java.util.HashMap<>();
+                                newProd.put("id", matchedProdId);
+                                newProd.put("nombre", matchedProdName);
+                                newProd.put("precio", matchedProdPrice);
+                                newProd.put("cantidad", extQty);
+                                mappedProducts.add(newProd);
+                            }
+                            updatedAnyProduct = true;
+                        }
+                    }
+
+                    if (updatedAnyProduct) {
+                        // Calcular nuevo valor total
+                        double newTotalValue = 0.0;
+                        for (java.util.Map<String, Object> p : mappedProducts) {
+                            double price = ((Number) p.get("precio")).doubleValue();
+                            int qty = ((Number) p.get("cantidad")).intValue();
+                            newTotalValue += price * qty;
+                        }
+
+                        String newProdJson = objectMapper.writeValueAsString(mappedProducts);
+                        jdbcTemplate.update("UPDATE oportunidades SET productos_json = ?, valor = ? WHERE id = ?", newProdJson, newTotalValue, oppId);
+                        logger.info("Oportunidad ID {} actualizada con productos: {} y total valor: {}", oppId, newProdJson, newTotalValue);
+                    }
+                }
+
+                // Extraer forma de pago
+                if (info.has("payment_method") && !info.get("payment_method").isNull()) {
+                    String payMethod = info.get("payment_method").asText().trim();
+                    if (!payMethod.isEmpty() && !"null".equalsIgnoreCase(payMethod)) {
+                        String cleanPayMethod = payMethod.substring(0, 1).toUpperCase() + payMethod.substring(1).toLowerCase();
+                        String payTag = "[Método de Pago: " + cleanPayMethod + "]";
+                        if (!currentNotas.contains("[Método de Pago:")) {
+                            String newNotas = currentNotas.trim();
+                            if (!newNotas.isEmpty()) newNotas += "\n";
+                            newNotas += payTag;
+                            jdbcTemplate.update("UPDATE oportunidades SET notas = ? WHERE id = ?", newNotas, oppId);
+                            logger.info("Oportunidad ID {} actualizada con notas de pago: {}", oppId, payTag);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error al procesar la información extraída de la oportunidad:", e);
+        }
+    }
+
+    private void convertOpportunityToOrder(Long oppId) {
+        try {
+            // Check if already converted to avoid duplicate orders
+            Integer existingCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pedidos WHERE oportunidad_id = ?",
+                Integer.class, oppId
+            );
+            if (existingCount != null && existingCount > 0) {
+                logger.info("La oportunidad ID {} ya fue convertida a pedido anteriormente.", oppId);
+                return;
+            }
+
+            // Fetch opportunity details
+            java.util.Map<String, Object> opp = jdbcTemplate.queryForMap(
+                "SELECT titulo, contacto_id, valor, prioridad, notas, productos_json FROM oportunidades WHERE id = ?",
+                oppId
+            );
+
+            Long contactoId = opp.get("contacto_id") != null ? ((Number) opp.get("contacto_id")).longValue() : null;
+            Double total = opp.get("valor") != null ? ((Number) opp.get("valor")).doubleValue() : 0.0;
+            String prioridad = opp.get("prioridad") != null ? opp.get("prioridad").toString() : "Media";
+            String notas = opp.get("notes") != null ? opp.get("notes").toString() : (opp.get("notas") != null ? opp.get("notas").toString() : "");
+            String productosJson = opp.get("productos_json") != null ? opp.get("productos_json").toString() : null;
+
+            // Fetch contact name
+            String contactoNombre = "";
+            if (contactoId != null) {
+                try {
+                    contactoNombre = jdbcTemplate.queryForObject(
+                        "SELECT COALESCE(razon_social, CONCAT(nombres, ' ', apellidos)) FROM contacts WHERE id = ?",
+                        String.class, contactoId
+                    );
+                } catch (Exception ignored) {}
+            }
+
+            // Fetch primary address of contact
+            String direccion = null;
+            String referencia = null;
+            Double latitud = null;
+            Double longitud = null;
+            String distrito = null;
+            if (contactoId != null) {
+                try {
+                    java.util.List<java.util.Map<String, Object>> addrs = jdbcTemplate.queryForList(
+                        "SELECT d.direccion_completa, d.referencia, d.latitud, d.longitud, u.distrito " +
+                        "FROM direcciones d " +
+                        "LEFT JOIN ubigeo_peru u ON d.codigo_ubigeo = u.codigo_ubigeo " +
+                        "WHERE d.id_contacto = ? " +
+                        "ORDER BY d.id_direccion ASC LIMIT 1",
+                        contactoId
+                    );
+                    if (!addrs.isEmpty()) {
+                        java.util.Map<String, Object> addr = addrs.get(0);
+                        direccion = addr.get("direccion_completa") != null ? addr.get("direccion_completa").toString() : null;
+                        referencia = addr.get("referencia") != null ? addr.get("referencia").toString() : null;
+                        latitud = addr.get("latitud") != null ? ((Number) addr.get("latitud")).doubleValue() : null;
+                        longitud = addr.get("longitud") != null ? ((Number) addr.get("longitud")).doubleValue() : null;
+                        distrito = addr.get("distrito") != null ? addr.get("distrito").toString() : null;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // Generate order number
+            String todayStr = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+            java.util.Random random = new java.util.Random();
+            int randNum = 1000 + random.nextInt(9000);
+            String numeroPedido = "PED-" + todayStr + "-" + randNum;
+
+            // Get initial stage for pedidos
+            Integer stageId = null;
+            try {
+                stageId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM etapas_pedido ORDER BY orden ASC LIMIT 1",
+                    Integer.class
+                );
+            } catch (Exception ignored) {}
+
+            // Ensure column exists
+            try {
+                jdbcTemplate.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS oportunidad_id BIGINT");
+            } catch (Exception ignored) {}
+
+            // Insert the order into pedidos
+            jdbcTemplate.update(
+                "INSERT INTO pedidos (" +
+                "numero_pedido, contacto_id, contacto_persona_nombre, metodo_pago, estado_pago, " +
+                "subtotal, igv, total, direccion_entrega, distrito, latitud, longitud, notas, " +
+                "fecha_entrega, hora_entrega, prioridad, tipo_envio, etapa_id, oportunidad_id, created_at" +
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, timezone(COALESCE((SELECT value_text FROM system_settings WHERE key_name = 'timezone' LIMIT 1), 'America/Lima'), now()))",
+                numeroPedido, contactoId, contactoNombre, "Efectivo", "Pendiente",
+                total, 0.0, total, direccion, distrito, latitud, longitud,
+                "Creado desde Oportunidad Ganada de forma automática por la IA. " + notas,
+                "12:00", prioridad, "Despacho", stageId, oppId
+            );
+
+            // Fetch the newly created order ID
+            Long newPedidoId = jdbcTemplate.queryForObject(
+                "SELECT id FROM pedidos WHERE numero_pedido = ?",
+                Long.class, numeroPedido
+            );
+
+            // Insert products into pedido_detalles
+            if (productosJson != null && !productosJson.trim().isEmpty()) {
+                try {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    java.util.List<?> products = mapper.readValue(productosJson, java.util.List.class);
+                    for (Object prodObj : products) {
+                        if (prodObj instanceof java.util.Map) {
+                            java.util.Map<?, ?> prodMap = (java.util.Map<?, ?>) prodObj;
+                            Number prodId = (Number) prodMap.get("id");
+                            Number cantidad = (Number) prodMap.get("cantidad");
+                            Number precio = (Number) prodMap.get("precio");
+                            if (prodId != null && cantidad != null) {
+                                jdbcTemplate.update(
+                                    "INSERT INTO pedido_detalles (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)",
+                                    newPedidoId, prodId.longValue(), cantidad.intValue(), (precio != null ? precio.doubleValue() : 0.0)
+                                );
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.error("Error al parsear productos de la oportunidad para convertirlos a pedido:", e);
+                }
+            }
+            logger.info("Oportunidad ID {} convertida exitosamente a Pedido ID {}", oppId, newPedidoId);
+        } catch (Exception e) {
+            logger.error("Error al convertir oportunidad a pedido de forma automática:", e);
+        }
+    }
+
+    private String normalizeString(String input) {
+        if (input == null) return "";
+        try {
+            // Normalizar acentos y diacríticos
+            String normalized = java.text.Normalizer.normalize(input.toLowerCase().trim(), java.text.Normalizer.Form.NFD);
+            normalized = normalized.replaceAll("\\p{M}", "");
+            
+            // Reemplazar caracteres no alfanuméricos por espacios
+            normalized = normalized.replaceAll("[^a-z0-9\\s]", " ");
+            
+            // Normalizar unidades de volumen (ej: 20 l, 20lts, 20 litros -> 20l)
+            normalized = normalized.replaceAll("(\\d+)\\s*(l|litros|litro|lts|lt|trs|tr)\\b", "$1l");
+            
+            // Colapsar espacios consecutivos
+            normalized = normalized.replaceAll("\\s+", " ").trim();
+            return normalized;
+        } catch (Exception e) {
+            return input.toLowerCase().trim();
+        }
+    }
 }
+

@@ -17,7 +17,7 @@ const ViewContact = () => {
                     <Suspense fallback={<div className="text-center py-5">Cargando detalles del contacto...</div>}>
                         <div className="contactapp-detail-wrap">
                             <ViewContactHeader toggleSidebar={() => setShowSidebar(!showSidebar)} show={showSidebar} contactName={contactName} />
-                            <div className="contact-body px-4 py-2" style={{ overflowY: 'auto' }}>
+                            <div className="contact-body px-4 py-2" style={{ overflowY: 'auto', width: '100%', height: '100%', flex: '1 1 auto' }}>
                                 <ViewContactBody setContactName={setContactName} />
                             </div>
                         </div>

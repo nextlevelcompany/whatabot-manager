@@ -119,7 +119,26 @@ public class GeminiService {
                     clientName = contact.getRazonSocial() != null ? contact.getRazonSocial().trim() : "DESCONOCIDO";
                 }
                 customerContextBuilder.append("- Nombre: ").append(emptyToDefault(clientName, "DESCONOCIDO")).append(" (Registrado)\n");
-                if (contact.getReferencia() != null && !contact.getReferencia().trim().isEmpty()) {
+                
+                if (contact.getDirecciones() != null && !contact.getDirecciones().isEmpty()) {
+                    customerContextBuilder.append("- Direcciones del Cliente:\n");
+                    for (com.nextlead.models.Direccion dir : contact.getDirecciones()) {
+                        String fullAddr = (dir.getDireccionCompleta() != null ? dir.getDireccionCompleta() : "").trim();
+                        String dist = (dir.getDistrito() != null ? dir.getDistrito() : "").trim();
+                        String ref = (dir.getReferencia() != null ? dir.getReferencia() : "").trim();
+                        
+                        customerContextBuilder.append("  * Dirección: ").append(fullAddr.isEmpty() ? "No registrada" : fullAddr).append("\n");
+                        customerContextBuilder.append("    Distrito: ").append(dist.isEmpty() ? "No registrado" : dist).append("\n");
+                        if (!ref.isEmpty()) {
+                            customerContextBuilder.append("    Referencia: ").append(ref).append("\n");
+                        }
+                        if (dir.getLatitud() != null && dir.getLongitud() != null) {
+                            customerContextBuilder.append("    Google Maps URL: https://www.google.com/maps?q=").append(dir.getLatitud()).append(",").append(dir.getLongitud()).append("\n");
+                        } else {
+                            customerContextBuilder.append("    Google Maps URL: No disponible\n");
+                        }
+                    }
+                } else if (contact.getReferencia() != null && !contact.getReferencia().trim().isEmpty()) {
                     customerContextBuilder.append("- Dirección registrada: ").append(contact.getReferencia()).append("\n");
                 }
             } else {
@@ -151,7 +170,8 @@ public class GeminiService {
                     .append("8. No repitas todo el catálogo si el cliente no lo pidió.\n")
                     .append("9. No uses etiquetas [IMG]. El backend enviará la imagen según el JSON.\n")
                     .append("10. Si falta información, formula una pregunta concreta.\n")
-                    .append("11. El campo \"next_state\" debe ser muy corto (máximo 3 palabras o vacío), ej: \"inicio\" o \"menu\". NO escribas explicaciones ni repitas reglas en él.\n\n")
+                    .append("11. El campo \"next_state\" debe ser muy corto (máximo 3 palabras o vacío). OBLIGATORIAMENTE coloca \"pedido_confirmado\" en \"next_state\" si el cliente está confirmando su pedido final y ya se tienen todos los datos requeridos (productos, dirección y forma de pago).\n")
+                    .append("12. Si el cliente ya tiene una dirección registrada en su contexto (debajo de 'Direcciones del Cliente'), reemplaza OBLIGATORIAMENTE los marcadores '[Dirección guardada]', '[Distrito guardado]' y '[URL Google Maps guardada]' del flujo por la dirección, distrito y coordenadas de Google Maps reales del cliente. Si no cuenta con coordenadas de Google Maps, omite esa línea.\n\n")
                     .append("FORMATO JSON OBLIGATORIO:\n")
                     .append("{\n")
                     .append("  \"intent\": \"saludo|producto|promocion|delivery|pedido|faq|reclamo|humano|desconocido\",\n")
@@ -163,8 +183,22 @@ public class GeminiService {
                     .append("  \"caption\": null,\n")
                     .append("  \"buttons\": [],\n")
                     .append("  \"next_state\": \"\",\n")
-                    .append("  \"needs_human\": false\n")
+                    .append("  \"needs_human\": false,\n")
+                    .append("  \"extracted_info\": {\n")
+                    .append("     \"client_name\": \"Nombre completo del cliente (solo si lo mencionó explícitamente)\",\n")
+                    .append("     \"client_dni\": \"Número de DNI (8 dígitos) o documento de identidad del cliente (solo si lo mencionó explícitamente)\",\n")
+                    .append("     \"products\": [\n")
+                    .append("        { \"name\": \"Nombre del producto del catálogo que desea ordenar\", \"quantity\": 1 }\n")
+                    .append("     ],\n")
+                    .append("     \"address\": {\n")
+                    .append("        \"district\": \"Nombre del distrito en Lima/Arequipa/etc. que indicó para la entrega\",\n")
+                    .append("        \"street\": \"Calle, avenida, jirón y número indicado para la entrega\",\n")
+                    .append("        \"reference\": \"Referencia física o indicación de cómo llegar a su domicilio\"\n")
+                    .append("     },\n")
+                    .append("     \"payment_method\": \"Método de pago elegido (yape|plin|efectivo|transferencia)\"\n")
+                    .append("  }\n")
                     .append("}\n")
+                    .append("Nota: Si el cliente no indicó o no actualizó ningún dato de 'extracted_info' en su mensaje, pon el campo 'extracted_info' como null. Si indicó solo parte de los datos (por ejemplo, solo los productos, o solo la dirección de entrega), llena únicamente esos campos dentro de 'extracted_info' y deja los demás como null.\n\n")
                     .append(customerContextBuilder)
                     .append(contextBuilder);
             if (customRules != null && !customRules.trim().isEmpty()) {
@@ -461,6 +495,42 @@ public class GeminiService {
         properties.put("buttons", Map.of("type", "ARRAY", "items", Map.of("type", "STRING")));
         properties.put("next_state", Map.of("type", "STRING"));
         properties.put("needs_human", Map.of("type", "BOOLEAN"));
+
+        // Schema para extracted_info (pedido, dirección, pago, etc.)
+        Map<String, Object> extractedInfoSchema = new HashMap<>();
+        extractedInfoSchema.put("type", "OBJECT");
+        
+        Map<String, Object> extProps = new HashMap<>();
+        extProps.put("client_name", Map.of("type", "STRING"));
+        extProps.put("client_dni", Map.of("type", "STRING"));
+        
+        // Products array schema
+        Map<String, Object> prodArraySchema = new HashMap<>();
+        prodArraySchema.put("type", "ARRAY");
+        Map<String, Object> prodItemSchema = new HashMap<>();
+        prodItemSchema.put("type", "OBJECT");
+        Map<String, Object> prodItemProps = new HashMap<>();
+        prodItemProps.put("name", Map.of("type", "STRING"));
+        prodItemProps.put("quantity", Map.of("type", "INTEGER"));
+        prodItemSchema.put("properties", prodItemProps);
+        prodArraySchema.put("items", prodItemSchema);
+        extProps.put("products", prodArraySchema);
+        
+        // Address schema
+        Map<String, Object> addrSchema = new HashMap<>();
+        addrSchema.put("type", "OBJECT");
+        Map<String, Object> addrProps = new HashMap<>();
+        addrProps.put("district", Map.of("type", "STRING"));
+        addrProps.put("street", Map.of("type", "STRING"));
+        addrProps.put("reference", Map.of("type", "STRING"));
+        addrSchema.put("properties", addrProps);
+        extProps.put("address", addrSchema);
+        
+        extProps.put("payment_method", Map.of("type", "STRING"));
+        extractedInfoSchema.put("properties", extProps);
+        
+        properties.put("extracted_info", extractedInfoSchema);
+
         schema.put("properties", properties);
         return schema;
     }

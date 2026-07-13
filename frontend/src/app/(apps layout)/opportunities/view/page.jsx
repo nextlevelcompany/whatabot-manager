@@ -5,6 +5,9 @@ import { Row, Col, Form, Button, Badge, Modal, Spinner, Card, InputGroup, Table 
 import SimpleBar from 'simplebar-react';
 import { Plus, Tag, Trash, Edit2, Move, Star, DollarSign, Settings, Check, Save, Send } from 'react-feather';
 import Swal from 'sweetalert2';
+import dynamic from 'next/dynamic';
+
+const ContactLiveChats = dynamic(() => import('../../apps/contact/contact-list/ContactLiveChats'), { ssr: false });
 
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
@@ -108,6 +111,7 @@ export default function OpportunitiesKanbanPage() {
     const itemsPerPage = 10;
     const [tags, setTags] = useState([]);
     const [contacts, setContacts] = useState([]);
+    const [fullContacts, setFullContacts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [settings, setSettings] = useState({
         'formato.fecha': 'd/m/Y',
@@ -245,6 +249,17 @@ export default function OpportunitiesKanbanPage() {
                 }
             } catch (err) {
                 console.error("Error loading settings:", err);
+            }
+
+            // Fetch full contacts for the WhatsApp chat view
+            try {
+                const fullContactsRes = await fetch(`${API_BASE}/api/contacts`);
+                if (fullContactsRes.ok) {
+                    const fullContactsData = await fullContactsRes.json();
+                    setFullContacts(fullContactsData || []);
+                }
+            } catch (err) {
+                console.error("Error loading full contacts:", err);
             }
         } catch (e) {
             console.error("Error loading Kanban data", e);
@@ -847,45 +862,49 @@ export default function OpportunitiesKanbanPage() {
                 {/* Header Toolbar */}
                 <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 bg-white p-3 rounded shadow-sm border mb-4">
                     <div className="d-flex align-items-center">
-                        <Button 
-                            variant={sidebarCollapsed ? "primary" : "outline-primary"} 
-                            size="sm" 
-                            className="me-3 d-flex align-items-center gap-1 shadow-sm" 
-                            onClick={() => {
-                                const newCollapsed = !sidebarCollapsed;
-                                setSidebarCollapsed(newCollapsed);
-                                localStorage.setItem('opps_sidebar_collapsed', String(newCollapsed));
-                            }} 
-                            title={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
-                            style={{ height: '34px' }}
-                        >
-                            <i className="bi bi-filter"></i>
-                            <span className="fw-semibold">{sidebarCollapsed ? "Mostrar Filtros" : "Ocultar Filtros"}</span>
-                        </Button>
+                        {viewMode !== 'chats' && (
+                            <Button 
+                                variant={sidebarCollapsed ? "primary" : "outline-primary"} 
+                                size="sm" 
+                                className="me-3 d-flex align-items-center gap-1 shadow-sm" 
+                                onClick={() => {
+                                    const newCollapsed = !sidebarCollapsed;
+                                    setSidebarCollapsed(newCollapsed);
+                                    localStorage.setItem('opps_sidebar_collapsed', String(newCollapsed));
+                                }} 
+                                title={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
+                                style={{ height: '34px' }}
+                            >
+                                <i className="bi bi-filter"></i>
+                                <span className="fw-semibold">{sidebarCollapsed ? "Mostrar Filtros" : "Ocultar Filtros"}</span>
+                            </Button>
+                        )}
                         <h4 className="mb-0 text-primary fw-bold d-flex align-items-center">
-                            <i className="bi bi-funnel-fill me-2 fs-4"></i>
-                            Embudo de Ventas (CRM)
+                            <i className={viewMode === 'chats' ? "bi bi-whatsapp me-2 fs-4" : "bi bi-funnel-fill me-2 fs-4"}></i>
+                            {viewMode === 'chats' ? "Chats de Ventas (WhatsApp)" : "Embudo de Ventas (CRM)"}
                         </h4>
                     </div>
                     
                     {/* Buscador Integrado (Lupa a la izquierda) */}
-                    <div style={{ maxWidth: '350px', flexGrow: 1 }} className="mx-lg-4">
-                        <InputGroup size="sm">
-                            <InputGroup.Text className="bg-white border-end-0">
-                                <i className="bi bi-search text-muted"></i>
-                            </InputGroup.Text>
-                            <Form.Control
-                                className="border-start-0 shadow-none"
-                                placeholder="Buscar por título, cliente o etiqueta..."
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                            />
-                        </InputGroup>
-                    </div>
+                    {viewMode !== 'chats' && (
+                        <div style={{ maxWidth: '350px', flexGrow: 1 }} className="mx-lg-4">
+                            <InputGroup size="sm">
+                                <InputGroup.Text className="bg-white border-end-0">
+                                    <i className="bi bi-search text-muted"></i>
+                                </InputGroup.Text>
+                                <Form.Control
+                                    className="border-start-0 shadow-none"
+                                    placeholder="Buscar por título, cliente o etiqueta..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                />
+                            </InputGroup>
+                        </div>
+                    )}
 
                     {/* Acciones Rápidas */}
                     <div className="d-flex gap-2 align-items-center flex-wrap">
-                        {/* Selector de Vista (Kanban / Lista) */}
+                        {/* Selector de Vista (Kanban / Lista / Chats) */}
                         <div className="btn-group bg-light border rounded p-1" style={{ height: '34px' }}>
                             <Button
                                 variant={viewMode === 'kanban' ? 'dark' : 'light'}
@@ -906,6 +925,16 @@ export default function OpportunitiesKanbanPage() {
                                 title="Vista Lista"
                             >
                                 <i className="bi bi-list-task"></i>
+                            </Button>
+                            <Button
+                                variant={viewMode === 'chats' ? 'dark' : 'light'}
+                                size="sm"
+                                className={`d-flex align-items-center fw-bold px-3 border-0 ${viewMode === 'chats' ? 'text-white' : 'text-success'}`}
+                                onClick={() => setViewMode('chats')}
+                                style={{ height: '24px' }}
+                                title="Chats de WhatsApp"
+                            >
+                                <i className="bi bi-whatsapp"></i>
                             </Button>
                         </div>
 
@@ -960,45 +989,47 @@ export default function OpportunitiesKanbanPage() {
                 </div>
 
                 {/* KPI Summary Row */}
-                <Row className="mb-4 g-3">
-                    <Col md={3}>
-                        <Card className="shadow-sm border-0 bg-white">
-                            <Card.Body className="p-3 text-center">
-                                <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Oportunidades Activas</small>
-                                <h4 className="mb-0 fw-bold text-primary mt-1">{kpiOppsActivas.length}</h4>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                    <Col md={3}>
-                        <Card className="shadow-sm border-0 bg-white">
-                            <Card.Body className="p-3 text-center">
-                                <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Valor Total del Embudo</small>
-                                <h4 className="mb-0 fw-bold text-dark mt-1">S/ {kpiTotalValue.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                    <Col md={3}>
-                        <Card className="shadow-sm border-0 bg-white">
-                            <Card.Body className="p-3 text-center">
-                                <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Cerrado Ganado</small>
-                                <h4 className="mb-0 fw-bold text-success mt-1">S/ {kpiGanadoValue.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                    <Col md={3}>
-                        <Card className="shadow-sm border-0 bg-white">
-                            <Card.Body className="p-3 text-center">
-                                <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Tasa de Conversión</small>
-                                <h4 className="mb-0 fw-bold text-warning mt-1">{conversionRate}%</h4>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                </Row>
+                {viewMode !== 'chats' && (
+                    <Row className="mb-4 g-3">
+                        <Col md={3}>
+                            <Card className="shadow-sm border-0 bg-white">
+                                <Card.Body className="p-3 text-center">
+                                    <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Oportunidades Activas</small>
+                                    <h4 className="mb-0 fw-bold text-primary mt-1">{kpiOppsActivas.length}</h4>
+                                </Card.Body>
+                            </Card>
+                        </Col>
+                        <Col md={3}>
+                            <Card className="shadow-sm border-0 bg-white">
+                                <Card.Body className="p-3 text-center">
+                                    <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Valor Total del Embudo</small>
+                                    <h4 className="mb-0 fw-bold text-dark mt-1">S/ {kpiTotalValue.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                                </Card.Body>
+                            </Card>
+                        </Col>
+                        <Col md={3}>
+                            <Card className="shadow-sm border-0 bg-white">
+                                <Card.Body className="p-3 text-center">
+                                    <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Cerrado Ganado</small>
+                                    <h4 className="mb-0 fw-bold text-success mt-1">S/ {kpiGanadoValue.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                                </Card.Body>
+                            </Card>
+                        </Col>
+                        <Col md={3}>
+                            <Card className="shadow-sm border-0 bg-white">
+                                <Card.Body className="p-3 text-center">
+                                    <small className="text-muted text-uppercase fw-bold" style={{ fontSize: '10px' }}>Tasa de Conversión</small>
+                                    <h4 className="mb-0 fw-bold text-warning mt-1">{conversionRate}%</h4>
+                                </Card.Body>
+                            </Card>
+                        </Col>
+                    </Row>
+                )}
 
                 {/* Kanban & Filters Layout Row */}
                 <Row>
                     {/* Filters Sidebar (A la izquierda, replicado de pedidos) */}
-                    {!sidebarCollapsed && (
+                    {viewMode !== 'chats' && !sidebarCollapsed && (
                         <Col lg={3} className="mb-4">
                             <div className="bg-white p-4 rounded shadow-sm border" style={{ position: 'sticky', top: '20px' }}>
                                 <div className="d-flex justify-content-between align-items-center mb-4">
@@ -1138,12 +1169,14 @@ export default function OpportunitiesKanbanPage() {
                     )}
 
                     {/* Content Panel (Kanban Board / List View) */}
-                    <Col lg={sidebarCollapsed ? 12 : 9} className="mb-4">
+                    <Col lg={(viewMode === 'chats' || sidebarCollapsed) ? 12 : 9} className="mb-4">
                         {loading ? (
                             <div className="text-center py-5">
                                 <Spinner animation="border" />
                                 <p className="mt-2 text-muted">Cargando embudo CRM...</p>
                             </div>
+                        ) : viewMode === 'chats' ? (
+                            <ContactLiveChats contacts={fullContacts} />
                         ) : viewMode === 'list' ? (
                             <Card className="border-0 shadow-sm rounded-3 overflow-hidden bg-white">
                                 <Table hover responsive className="align-middle mb-0 text-nowrap">

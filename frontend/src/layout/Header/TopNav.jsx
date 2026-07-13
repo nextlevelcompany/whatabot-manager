@@ -41,15 +41,18 @@ const TopNav = () => {
         phone: '',
         avatar: ''
     });
+    const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
+        setIsMounted(true);
         const username = typeof window !== 'undefined' ? localStorage.getItem("username") : null;
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
 
         const loadProfile = async () => {
             try {
                 // Validación robusta: si no hay username o token válido, no llamamos a la API
-                if (!username || !token || token === "null" || token === "undefined") {
+                if (!username || username === "null" || username === "undefined" || !username.trim() ||
+                    !token || token === "null" || token === "undefined") {
                     setProfile({
                         username: username || 'NextLead',
                         role: (typeof window !== 'undefined' ? localStorage.getItem("role") : null) || 'USER',
@@ -89,15 +92,15 @@ const TopNav = () => {
                     });
                 }
             } catch (err) {
-                console.error("Error loading user profile in TopNav:", err);
+                console.warn("No se pudo cargar el perfil de usuario en TopNav (servidor reiniciándose o fuera de línea):", err.message || err);
                 // Fallback local en caso de error de red
                 setProfile({
                     username: username,
-                    role: localStorage.getItem("role") || 'USER',
+                    role: (typeof window !== 'undefined' ? localStorage.getItem("role") : null) || 'USER',
                     firstName: '',
                     lastName: '',
                     phone: '',
-                    avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username)}`
+                    avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username || 'NextLead')}`
                 });
             }
         };
@@ -155,7 +158,7 @@ const TopNav = () => {
                     }
                 }
             } catch (e) {
-                console.error("Error loading favicon in TopNav", e);
+                console.warn("No se pudo cargar el favicon en TopNav (servidor reiniciándose o fuera de línea):", e.message || e);
             }
         };
 
@@ -201,6 +204,10 @@ const TopNav = () => {
     };
 
 
+
+    if (!isMounted) {
+        return <div className="hk-navbar navbar navbar-expand-xl navbar-light fixed-top" />;
+    }
 
     return (
         <Navbar expand="xl" className="hk-navbar navbar-light fixed-top" >

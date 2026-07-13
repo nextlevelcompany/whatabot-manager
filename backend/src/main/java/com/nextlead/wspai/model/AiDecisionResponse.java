@@ -41,7 +41,19 @@ public class AiDecisionResponse {
     @JsonAlias("needsHuman")
     private boolean needsHuman;
 
+    @JsonProperty("extracted_info")
+    @JsonAlias("extractedInfo")
+    private com.fasterxml.jackson.databind.JsonNode extractedInfo;
+
     // Getters and Setters
+    public com.fasterxml.jackson.databind.JsonNode getExtractedInfo() {
+        return extractedInfo;
+    }
+
+    public void setExtractedInfo(com.fasterxml.jackson.databind.JsonNode extractedInfo) {
+        this.extractedInfo = extractedInfo;
+    }
+
     public String getIntent() {
         return intent;
     }

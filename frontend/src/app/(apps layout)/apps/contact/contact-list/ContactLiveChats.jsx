@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Row, Col, Form, Button, Spinner, InputGroup, Card, Badge } from 'react-bootstrap';
+import { Row, Col, Form, Button, Spinner, InputGroup, Card, Badge, ListGroup } from 'react-bootstrap';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import { Send, Search, User, AlertCircle, RefreshCw, MessageSquare } from 'react-feather';
 import SimpleBar from 'simplebar-react';
+import classNames from 'classnames';
 
 const getApiBase = () => {
     if (typeof window !== 'undefined') {
@@ -15,6 +16,114 @@ const getApiBase = () => {
     return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
 const API_BASE = getApiBase();
+
+const parseMessageMedia = (msgText, API_BASE) => {
+    let images = [];
+    let audios = [];
+    let videos = [];
+    let displayText = msgText || '';
+
+    if (!msgText) return { images, audios, videos, displayText };
+
+    // Formato heredado: [IMAGE]/path, [AUDIO]/path, [VIDEO]/path
+    if (msgText.startsWith('[IMAGE]')) {
+        const paths = msgText.substring(7).split(',');
+        paths.forEach(p => {
+            let clean = p.trim();
+            if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+            images.push(clean.startsWith('http') ? clean : `${API_BASE}${clean}`);
+        });
+        return { images, audios, videos, displayText: '' };
+    }
+    if (msgText.startsWith('[AUDIO]')) {
+        const paths = msgText.substring(7).split(',');
+        paths.forEach(p => {
+            let clean = p.trim();
+            if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+            audios.push(clean.startsWith('http') ? clean : `${API_BASE}${clean}`);
+        });
+        return { images, audios, videos, displayText: '' };
+    }
+    if (msgText.startsWith('[VIDEO]')) {
+        const paths = msgText.substring(7).split(',');
+        paths.forEach(p => {
+            let clean = p.trim();
+            if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+            videos.push(clean.startsWith('http') ? clean : `${API_BASE}${clean}`);
+        });
+        return { images, audios, videos, displayText: '' };
+    }
+
+    // Formato estructurado: [MEDIA:tipo] id=... url=...
+    const mediaTagRegex = /\[MEDIA:(image|audio|video)\]/i;
+    const match = msgText.match(mediaTagRegex);
+    if (match) {
+        const type = match[1].toLowerCase();
+        const tagIndex = msgText.indexOf(match[0]);
+        const textBefore = msgText.substring(0, tagIndex).trim();
+        const textAfter = msgText.substring(tagIndex + match[0].length).trim();
+
+        let idsStr = '';
+        let urlsStr = '';
+
+        const idIndex = textAfter.indexOf('id=');
+        const urlIndex = textAfter.indexOf('url=');
+
+        if (idIndex !== -1 && urlIndex !== -1) {
+            if (idIndex < urlIndex) {
+                idsStr = textAfter.substring(idIndex + 3, urlIndex).trim();
+                urlsStr = textAfter.substring(urlIndex + 4).trim();
+            } else {
+                urlsStr = textAfter.substring(urlIndex + 4, idIndex).trim();
+                idsStr = textAfter.substring(idIndex + 3).trim();
+            }
+        } else if (idIndex !== -1) {
+            idsStr = textAfter.substring(idIndex + 3).trim();
+        } else if (urlIndex !== -1) {
+            urlsStr = textAfter.substring(urlIndex + 4).trim();
+        }
+
+        // Si id empieza con http (como pasa con la promo), tratarlo como url
+        if (idsStr.startsWith('http')) {
+            if (!urlsStr) {
+                urlsStr = idsStr;
+                idsStr = '';
+            }
+        }
+
+        displayText = textBefore;
+
+        if (urlsStr) {
+            const urls = urlsStr.split(',');
+            urls.forEach(u => {
+                let clean = u.trim();
+                if (clean.includes(':8080/')) clean = clean.replace(':8080/', ':8081/');
+                if (clean) {
+                    const finalUrl = clean.startsWith('http') ? clean : `${API_BASE}${clean}`;
+                    if (type === 'image') images.push(finalUrl);
+                    else if (type === 'audio') audios.push(finalUrl);
+                    else if (type === 'video') videos.push(finalUrl);
+                }
+            });
+        }
+
+        if (idsStr) {
+            const ids = idsStr.split(',');
+            ids.forEach(idVal => {
+                const idClean = idVal.trim();
+                if (!idClean) return;
+                if (/^\d+$/.test(idClean)) {
+                    const finalUrl = `${API_BASE}/api/productos/${idClean}/imagen`;
+                    if (type === 'image') images.push(finalUrl);
+                    else if (type === 'audio') audios.push(finalUrl);
+                    else if (type === 'video') videos.push(finalUrl);
+                }
+            });
+        }
+    }
+    console.log("Parsed media in ContactLiveChats:", { images, audios, videos, displayText, rawText: msgText });
+    return { images, audios, videos, displayText };
+};
 
 const ContactLiveChats = ({ contacts = [] }) => {
     // State management
@@ -26,6 +135,7 @@ const ContactLiveChats = ({ contacts = [] }) => {
     const [loadingConversation, setLoadingConversation] = useState(false);
     const [sending, setSending] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [chatFilter, setChatFilter] = useState('all'); // 'all' | 'unread' | 'unanswered'
     
     const messagesEndRef = useRef(null);
 
@@ -130,6 +240,20 @@ const ContactLiveChats = ({ contacts = [] }) => {
         setSelectedContact(contact);
         setLoadingConversation(true);
         setWspMessages([]);
+        
+        // Mark as read locally in the chatsList
+        setChatsList(prev => prev.map(c => {
+            if (c.id === contact.id && c.lastMessage && c.lastMessage.sender !== 'me') {
+                return {
+                    ...c,
+                    lastMessage: {
+                        ...c.lastMessage,
+                        status: 'READ'
+                    }
+                };
+            }
+            return c;
+        }));
         const phone = cleanPhoneNumber(contact.telefonoPrincipal);
         const contactLast9 = phone.length >= 9 ? phone.substring(phone.length - 9) : phone;
 
@@ -362,18 +486,41 @@ const ContactLiveChats = ({ contacts = [] }) => {
         }
     };
 
-    // Filter chat list by search term
+    // Filter chat list by search term and filter category
     const filteredChats = chatsList.filter(chat => {
-        return chat.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        const matchesSearch = chat.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                (chat.telefonoPrincipal && chat.telefonoPrincipal.includes(searchQuery));
+               
+        if (!matchesSearch) return false;
+
+        if (chatFilter === 'unread') {
+            // Unread: Last message exists, is from the contact, and status is not READ
+            return chat.lastMessage && chat.lastMessage.sender !== 'me' && chat.lastMessage.status !== 'READ';
+        }
+        
+        if (chatFilter === 'unanswered') {
+            // Unanswered: Last message exists and is from the contact (not replied yet)
+            return chat.lastMessage && chat.lastMessage.sender !== 'me';
+        }
+
+        return true;
     });
 
     return (
-        <Card className="shadow-sm border-0 rounded-lg overflow-hidden" style={{ height: 'calc(100vh - 210px)', minHeight: '500px' }}>
-            <Row className="g-0 h-100">
+        <div className="chatapp-wrap chatapp-info-active" style={{ height: 'calc(100vh - 210px)', minHeight: '550px' }}>
+            <div className="chatapp-content">
                 {/* Panel Izquierdo: Lista de Chats */}
-                <Col md={4} className="border-end d-flex flex-column h-100 bg-light">
-                    <div className="p-3 border-bottom bg-white">
+                <div className="chatapp-aside">
+                    <header className="aside-header">
+                        <div className="d-flex align-items-center justify-content-between w-100">
+                            <h1 className="h4 mb-0 fw-bold">Chats</h1>
+                            <Button variant="flush-dark" size="xs" onClick={initializeChatsList} title="Actualizar lista" className="btn-icon btn-rounded flush-soft-hover">
+                                <RefreshCw size={14} />
+                            </Button>
+                        </div>
+                    </header>
+                    
+                    <div className="p-3 border-bottom bg-white d-flex flex-column gap-2">
                         <InputGroup size="sm">
                             <InputGroup.Text className="bg-light border-0">
                                 <Search size={14} className="text-muted" />
@@ -391,138 +538,151 @@ const ContactLiveChats = ({ contacts = [] }) => {
                                 </Button>
                             )}
                         </InputGroup>
+                        
+                        {/* Filtros de mensajes */}
+                        <div className="d-flex gap-1">
+                            <Button 
+                                variant={chatFilter === 'all' ? 'primary' : 'light'} 
+                                size="xs" 
+                                onClick={() => setChatFilter('all')}
+                                className="rounded-pill px-3 py-1 fw-500"
+                                style={{ fontSize: '0.7rem' }}
+                            >
+                                Todos
+                            </Button>
+                            <Button 
+                                variant={chatFilter === 'unread' ? 'primary' : 'light'} 
+                                size="xs" 
+                                onClick={() => setChatFilter('unread')}
+                                className="rounded-pill px-3 py-1 fw-500"
+                                style={{ fontSize: '0.7rem' }}
+                            >
+                                No leídos
+                            </Button>
+                            <Button 
+                                variant={chatFilter === 'unanswered' ? 'primary' : 'light'} 
+                                size="xs" 
+                                onClick={() => setChatFilter('unanswered')}
+                                className="rounded-pill px-3 py-1 fw-500"
+                                style={{ fontSize: '0.7rem' }}
+                            >
+                                No respondidos
+                            </Button>
+                        </div>
                     </div>
 
-                    <SimpleBar style={{ flex: 1 }} className="px-1 py-2">
-                        {loadingChats ? (
-                            <div className="text-center py-5">
-                                <Spinner size="sm" animation="border" className="text-primary me-2" />
-                                <span className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando chats...</span>
-                            </div>
-                        ) : filteredChats.length === 0 ? (
-                            <div className="text-center py-5 px-3">
-                                <AlertCircle size={28} className="text-muted mb-2" />
-                                <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
-                                    {searchQuery ? 'No se encontraron resultados' : 'No hay conversaciones registradas'}
-                                </p>
-                            </div>
-                        ) : (
-                            filteredChats.map((chat) => {
-                                const isSelected = selectedContact && selectedContact.id === chat.id;
-                                const isAiActive = chat.aiActive;
-                                return (
-                                    <div
-                                        key={chat.id}
-                                        onClick={() => selectChat(chat)}
-                                        className={`d-flex align-items-center p-3 mb-1 mx-2 rounded-lg cursor-pointer transition-all ${
-                                            isSelected ? 'bg-primary text-white shadow-sm' : 'bg-white hover-soft-bg border-bottom'
-                                        }`}
-                                        style={{ 
-                                            cursor: 'pointer',
-                                            borderRadius: '8px',
-                                            transition: 'all 0.15s ease-in-out'
-                                        }}
-                                    >
-                                        {/* Avatar */}
-                                        <div 
-                                            className={`avatar avatar-sm rounded-circle d-flex align-items-center justify-content-center me-3 flex-shrink-0 bg-soft-${chat.avtBg} text-${chat.avtBg}`}
-                                            style={{ 
-                                                width: '40px', 
-                                                height: '40px', 
-                                                fontWeight: 'bold', 
-                                                fontSize: '0.9rem',
-                                                backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : undefined,
-                                                color: isSelected ? '#ffffff' : undefined
-                                            }}
-                                        >
-                                            {chat.initials}
-                                        </div>
+                    <div className="aside-body">
+                        <SimpleBar style={{ height: "100%" }} className="nicescroll-bar">
+                            {loadingChats ? (
+                                <div className="text-center py-5">
+                                    <Spinner size="sm" animation="border" className="text-primary me-2" />
+                                    <span className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando chats...</span>
+                                </div>
+                            ) : filteredChats.length === 0 ? (
+                                <div className="text-center py-5 px-3">
+                                    <AlertCircle size={28} className="text-muted mb-2" />
+                                    <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
+                                        {searchQuery ? 'No se encontraron resultados' : 'No hay conversaciones registradas'}
+                                    </p>
+                                </div>
+                            ) : (
+                                <ListGroup variant="flush" className="chat-contacts-list">
+                                    {filteredChats.map((chat) => {
+                                        const isSelected = selectedContact && selectedContact.id === chat.id;
+                                        const isAiActive = chat.aiActive;
+                                        return (
+                                            <ListGroup.Item 
+                                                key={chat.id} 
+                                                onClick={() => selectChat(chat)}
+                                                className="border-0 p-0"
+                                            >
+                                                <div className={classNames("media", { "active-user": isSelected }, { "read-chat": true })}>
+                                                    <div className="media-head">
+                                                        <div className={`avatar avatar-sm avatar-${chat.avtBg} avatar-rounded`}>
+                                                            <span className="initial-wrap">{chat.initials}</span>
+                                                        </div>
+                                                    </div>
 
-                                        {/* Chat Info */}
-                                        <div className="flex-grow-1 overflow-hidden" style={{ minWidth: 0 }}>
-                                            <div className="d-flex align-items-center justify-content-between mb-1">
-                                                <h6 className={`mb-0 text-truncate font-weight-bold ${isSelected ? 'text-white' : 'text-dark'}`} style={{ fontSize: '0.9rem' }}>
-                                                    {chat.displayName}
-                                                </h6>
-                                                {chat.lastMessage && (
-                                                    <span className={`small flex-shrink-0 ms-2 ${isSelected ? 'text-white-50' : 'text-muted'}`} style={{ fontSize: '0.72rem' }}>
-                                                        {new Date(chat.lastMessage.timestamp).toLocaleDateString([], { hour: '2-digit', minute: '2-digit' }) === new Date().toLocaleDateString([], { hour: '2-digit', minute: '2-digit' }) 
-                                                            ? chat.lastMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                                            : chat.lastMessage.timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' })
-                                                        }
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="d-flex align-items-center justify-content-between">
-                                                <p className={`mb-0 text-truncate ${isSelected ? 'text-white-50' : 'text-muted'}`} style={{ fontSize: '0.8rem' }}>
-                                                    {chat.lastMessage ? chat.lastMessage.text : 'Sin mensajes'}
-                                                </p>
-                                                <div className="d-flex align-items-center ms-2 flex-shrink-0">
-                                                    {isAiActive && (
-                                                        <Badge bg={isSelected ? 'light' : 'success'} text={isSelected ? 'primary' : 'light'} className="d-flex align-items-center py-1 px-2" style={{ fontSize: '0.65rem' }}>
-                                                            <i className="bi bi-cpu-fill me-1" style={{ fontSize: '0.7rem' }}></i> IA
-                                                        </Badge>
-                                                    )}
+                                                    <div className="media-body">
+                                                        <div>
+                                                            <div className="user-name text-truncate">
+                                                                {chat.displayName}
+                                                            </div>
+                                                            <div className="user-last-chat text-truncate text-muted">
+                                                                {chat.lastMessage ? chat.lastMessage.text : 'Sin mensajes'}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="last-chat-time">
+                                                                {chat.lastMessage && (
+                                                                    <>
+                                                                        {new Date(chat.lastMessage.timestamp).toLocaleDateString([], { hour: '2-digit', minute: '2-digit' }) === new Date().toLocaleDateString([], { hour: '2-digit', minute: '2-digit' }) 
+                                                                            ? chat.lastMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                                                            : chat.lastMessage.timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                                                                        }
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                            {isAiActive && (
+                                                                <Badge bg="success" text="light" className="py-0.5 px-1.5 ms-2 flex-shrink-0" style={{ fontSize: '0.65rem' }}>
+                                                                    <i className="bi bi-cpu-fill"></i> IA
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </SimpleBar>
-                    
-                    <div className="p-2 border-top bg-white d-flex justify-content-between align-items-center">
-                        <span className="text-muted small ps-2" style={{ fontSize: '0.75rem' }}>
-                            {filteredChats.length} clientes
-                        </span>
-                        <Button variant="outline-secondary" size="xs" onClick={initializeChatsList} title="Recargar lista" className="border-0 py-1">
-                            <RefreshCw size={12} className="me-1" /> Actualizar
-                        </Button>
+                                            </ListGroup.Item>
+                                        );
+                                    })}
+                                </ListGroup>
+                            )}
+                        </SimpleBar>
                     </div>
-                </Col>
+                </div>
 
                 {/* Panel Derecho: Chat Activo */}
-                <Col md={8} className="d-flex flex-column h-100 bg-white">
+                <div className="chatapp-single-chat">
                     {selectedContact ? (
                         <>
                             {/* Cabecera del Chat */}
-                            <div className="p-3 border-bottom d-flex align-items-center justify-content-between bg-white shadow-sm z-index-1">
-                                <div className="d-flex align-items-center">
-                                    <div 
-                                        className={`avatar avatar-sm rounded-circle d-flex align-items-center justify-content-center me-3 bg-soft-${selectedContact.avtBg} text-${selectedContact.avtBg}`}
-                                        style={{ width: '40px', height: '40px', fontWeight: 'bold' }}
-                                    >
-                                        {selectedContact.initials}
+                            <header className="chat-header">
+                                <div className="d-flex align-items-center justify-content-between w-100">
+                                    <div className="media d-flex align-items-center">
+                                        <div 
+                                            className={`avatar avatar-sm rounded-circle d-flex align-items-center justify-content-center me-3 bg-soft-${selectedContact.avtBg} text-${selectedContact.avtBg}`}
+                                            style={{ width: '40px', height: '40px', fontWeight: 'bold' }}
+                                        >
+                                            {selectedContact.initials}
+                                        </div>
+                                        <div className="media-body">
+                                            <h6 className="user-name mb-0 fw-bold">{selectedContact.displayName}</h6>
+                                            <span className="user-status text-muted small" style={{ fontSize: '0.78rem' }}>
+                                                🟢 Teléfono: {selectedContact.telefonoPrincipal}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h6 className="mb-0 text-dark font-weight-bold" style={{ fontSize: '0.95rem' }}>{selectedContact.displayName}</h6>
-                                        <span className="text-muted small" style={{ fontSize: '0.78rem' }}>
-                                            🟢 Teléfono: {selectedContact.telefonoPrincipal}
-                                        </span>
+                                    
+                                    {/* IA Toggle Button */}
+                                    <div className="d-flex align-items-center me-2">
+                                        <div className="d-flex align-items-center border rounded-pill py-1 px-3 bg-light-soft">
+                                            <i className={`bi bi-cpu-fill me-2 ${selectedContact.aiActive ? 'text-success' : 'text-muted'}`} style={{ fontSize: '1.05rem' }}></i>
+                                            <span className="small text-muted me-2" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                                                Responder con IA (Gemini)
+                                            </span>
+                                            <Form.Check 
+                                                type="switch"
+                                                id="ai-toggle-chats"
+                                                checked={selectedContact.aiActive || false}
+                                                onChange={handleToggleAI}
+                                                className="m-0 cursor-pointer"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
-                                
-                                {/* IA Toggle Button */}
-                                <div className="d-flex align-items-center">
-                                    <div className="d-flex align-items-center me-3 border rounded-pill py-1 px-3 bg-light">
-                                        <i className={`bi bi-cpu-fill me-2 ${selectedContact.aiActive ? 'text-success' : 'text-muted'}`} style={{ fontSize: '1.05rem' }}></i>
-                                        <span className="small text-muted me-2" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
-                                            Responder con IA (Gemini)
-                                        </span>
-                                        <Form.Check 
-                                            type="switch"
-                                            id="ai-toggle-chats"
-                                            checked={selectedContact.aiActive || false}
-                                            onChange={handleToggleAI}
-                                            className="m-0 cursor-pointer"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
+                            </header>
 
                             {/* Mensajes del Chat */}
-                            <div className="flex-grow-1 p-3 bg-light overflow-auto" style={{ overflowY: 'scroll', maxHeight: 'calc(100% - 130px)' }}>
+                            <SimpleBar style={{ height: "calc(100% - 130px)" }} id="chat_body" className="chat-body">
                                 {loadingConversation ? (
                                     <div className="d-flex justify-content-center align-items-center h-100 flex-column">
                                         <Spinner animation="border" className="text-primary mb-2" />
@@ -535,73 +695,110 @@ const ContactLiveChats = ({ contacts = [] }) => {
                                         <p className="small text-muted-50">¡Envía un mensaje para comenzar la conversación!</p>
                                     </div>
                                 ) : (
-                                    <div className="d-flex flex-column gap-2">
+                                    <ul className="list-unstyled chat-single-list">
                                         {wspMessages.map((msg, idx) => {
                                             const isMe = msg.sender === 'me';
                                             const isSystem = msg.sender === 'SYSTEM';
 
                                             if (isSystem) {
                                                 return (
-                                                    <div key={msg.id || idx} className="d-flex justify-content-center my-2">
+                                                    <li key={msg.id || idx} className="d-flex justify-content-center my-2 list-unstyled">
                                                         <span className="badge bg-soft-warning text-warning border border-warning-20 px-3 py-1 rounded-pill small" style={{ fontSize: '0.75rem', maxWidth: '85%' }}>
                                                             {msg.text}
                                                         </span>
-                                                    </div>
+                                                    </li>
                                                 );
                                             }
 
+                                            // Parsear contenido multimedia
+                                            const { images, audios, videos, displayText } = parseMessageMedia(msg.text, API_BASE);
+
                                             return (
-                                                <div 
+                                                <li 
                                                     key={msg.id || idx} 
-                                                    className={`d-flex ${isMe ? 'justify-content-end' : 'justify-content-start'}`}
+                                                    className={`media ${isMe ? 'sent' : 'received'}`}
                                                 >
-                                                    <div 
-                                                        className={`p-2 rounded-lg position-relative ${
-                                                            isMe 
-                                                                ? 'bg-primary text-white' 
-                                                                : 'bg-white text-dark shadow-sm border'
-                                                        }`}
-                                                        style={{ 
-                                                            maxWidth: '75%', 
-                                                            borderRadius: isMe ? '12px 12px 0 12px' : '12px 12px 12px 0',
-                                                            padding: '8px 12px'
-                                                        }}
-                                                    >
-                                                        <p className="mb-1 style-message-text" style={{ fontSize: '0.85rem', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                                                            {msg.text}
-                                                        </p>
-                                                        <div className="d-flex justify-content-end align-items-center gap-1">
-                                                            <span className="small text-white-50" style={{ fontSize: '0.65rem', color: isMe ? 'rgba(255,255,255,0.7)' : '#9e9e9e' }}>
-                                                                {msg.time}
-                                                            </span>
-                                                            {isMe && (
-                                                                <span className="ms-1 d-inline-flex">
-                                                                    {msg.status === 'READ' ? (
-                                                                        <span className="text-info d-flex" style={{ fontSize: '0.65rem' }}>✓✓</span>
-                                                                    ) : msg.status === 'DELIVERED' ? (
-                                                                        <span className="text-white-50 d-flex" style={{ fontSize: '0.65rem' }}>✓✓</span>
-                                                                    ) : msg.status === 'SENT' ? (
-                                                                        <span className="text-white-50 d-flex" style={{ fontSize: '0.65rem' }}>✓</span>
-                                                                    ) : msg.status === 'FAILED' ? (
-                                                                        <AlertCircle size={10} className="text-danger" />
-                                                                    ) : (
-                                                                        <span className="text-white-50 d-flex" style={{ fontSize: '0.65rem' }}>✓</span>
+                                                    {!isMe && (
+                                                        <div className={`avatar avatar-xs avatar-${selectedContact.avtBg} avatar-rounded`}>
+                                                            <span className="initial-wrap">{selectedContact.initials}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="media-body">
+                                                        <div className="msg-box">
+                                                            <div>
+                                                                {images.length > 0 && (
+                                                                    <div className="d-flex flex-wrap gap-2 mb-1">
+                                                                        {images.map((imgUrl, i) => (
+                                                                            <img 
+                                                                                key={i}
+                                                                                src={imgUrl} 
+                                                                                alt="WhatsApp Imagen" 
+                                                                                className="img-fluid rounded border" 
+                                                                                style={{ maxHeight: '160px', maxWidth: images.length > 1 ? '160px' : '100%', objectFit: 'contain', cursor: 'pointer', backgroundColor: '#f1f5f9' }}
+                                                                                onClick={() => window.open(imgUrl, '_blank')}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                                {audios.length > 0 && (
+                                                                    <div className="d-flex flex-column gap-2 mb-1 py-1">
+                                                                        {audios.map((audUrl, i) => (
+                                                                            <audio 
+                                                                                key={i}
+                                                                                src={audUrl} 
+                                                                                controls 
+                                                                                className="w-100" 
+                                                                                style={{ minWidth: '220px', height: '40px' }}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                                {videos.length > 0 && (
+                                                                    <div className="d-flex flex-column gap-2 mb-1">
+                                                                        {videos.map((vidUrl, i) => (
+                                                                            <video 
+                                                                                key={i}
+                                                                                src={vidUrl} 
+                                                                                controls 
+                                                                                className="img-fluid rounded border" 
+                                                                                style={{ maxHeight: '240px', backgroundColor: '#000000' }}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                                {displayText && (
+                                                                    <p className="style-message-text mb-1" style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                                                        {displayText}
+                                                                    </p>
+                                                                )}
+                                                                <span className="chat-time d-flex align-items-center justify-content-end gap-1">
+                                                                    {msg.time}
+                                                                    {isMe && (
+                                                                        <span className="d-inline-flex">
+                                                                            {msg.status === 'READ' ? (
+                                                                                <span className="text-info" style={{ fontSize: '0.7rem', fontWeight: 'bold' }}>✓✓</span>
+                                                                            ) : msg.status === 'DELIVERED' ? (
+                                                                                <span className="text-muted" style={{ fontSize: '0.7rem' }}>✓✓</span>
+                                                                            ) : (
+                                                                                <span className="text-muted" style={{ fontSize: '0.7rem' }}>✓</span>
+                                                                            )}
+                                                                        </span>
                                                                     )}
                                                                 </span>
-                                                            )}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
+                                                </li>
                                             );
                                         })}
                                         <div ref={messagesEndRef} />
-                                    </div>
+                                    </ul>
                                 )}
-                            </div>
+                            </SimpleBar>
 
                             {/* Caja de Texto del Chat */}
-                            <div className="p-3 border-top bg-white">
-                                <InputGroup>
+                            <footer className="chat-footer">
+                                <InputGroup className="w-100 align-items-center">
                                     <Form.Control
                                         type="text"
                                         placeholder="Escribe tu mensaje de WhatsApp..."
@@ -616,16 +813,16 @@ const ContactLiveChats = ({ contacts = [] }) => {
                                         variant="primary" 
                                         onClick={sendWspMessage} 
                                         disabled={!wspInput.trim() || sending}
-                                        className="rounded-circle ms-2 p-2 d-flex align-items-center justify-content-center"
+                                        className="rounded-circle ms-2 p-0 d-flex align-items-center justify-content-center"
                                         style={{ width: '40px', height: '40px' }}
                                     >
                                         <Send size={16} />
                                     </Button>
                                 </InputGroup>
-                            </div>
+                            </footer>
                         </>
                     ) : (
-                        <div className="d-flex justify-content-center align-items-center h-100 flex-column text-muted py-5 bg-light">
+                        <div className="d-flex justify-content-center align-items-center h-100 flex-column text-muted py-5 bg-light-soft">
                             <div className="bg-white p-4 rounded-circle shadow-sm mb-3">
                                 <MessageSquare size={48} className="text-primary" />
                             </div>
@@ -635,9 +832,9 @@ const ContactLiveChats = ({ contacts = [] }) => {
                             </p>
                         </div>
                     )}
-                </Col>
-            </Row>
-        </Card>
+                </div>
+            </div>
+        </div>
     );
 };
 
