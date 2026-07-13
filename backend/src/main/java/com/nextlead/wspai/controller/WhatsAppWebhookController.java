@@ -589,6 +589,24 @@ public class WhatsAppWebhookController {
             String wamid = null;
             boolean mediaSent = false;
 
+            // Enviar texto de respuesta (introducción) primero si está disponible
+            if (replyText != null && !replyText.trim().isEmpty()) {
+                wamid = apiService.sendMessage(clientPhone, replyText.trim());
+                
+                WhatsAppMessage textMsg = new WhatsAppMessage();
+                textMsg.setSender(ourNumber);
+                textMsg.setReceiver(clientPhone);
+                textMsg.setMessageText(replyText.trim());
+                textMsg.setTimestamp(LocalDateTime.now());
+                textMsg.setStatus(wamid != null ? "SENT" : "FAILED");
+                textMsg.setWamid(wamid);
+                messageDao.save(textMsg);
+                
+                String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
+                messagingTemplate.convertAndSend("/topic/chat/" + last9, textMsg);
+                messagingTemplate.convertAndSend("/topic/chat/global-updates", textMsg);
+            }
+
             if (sendMedia) {
                 java.util.List<AiProductConfig> allAiProducts = aiConfigDao.getAllAiProductsConfig();
                 if (mediaType == null || mediaType.trim().isEmpty() || "null".equalsIgnoreCase(mediaType.trim())) {
@@ -649,8 +667,7 @@ public class WhatsAppWebhookController {
                                 currentCaption = "*" + matchedProd.getProductName() + "*\n💵 *Precio:* S/ " + (matchedProd.getProductPrice() != null ? matchedProd.getProductPrice().toString() : "0.00") + "\n\n" + (matchedProd.getCustomAiDescription() != null ? matchedProd.getCustomAiDescription().trim() : "");
                             }
                         } else {
-                            // Enviar caption solo en la primera imagen (o si es la única)
-                            currentCaption = (i == 0) ? (caption != null && !caption.trim().isEmpty() ? caption.trim() : replyText) : null;
+                            currentCaption = (caption != null && !caption.trim().isEmpty()) ? caption.trim() : null;
                         }
 
                         String currentWamid = apiService.sendMediaMessage(clientPhone, currentId, mediaType, null, currentCaption);
@@ -715,23 +732,6 @@ public class WhatsAppWebhookController {
                         }
                     }
                 }
-            }
-
-            if (!mediaSent && replyText != null && !replyText.trim().isEmpty()) {
-                wamid = apiService.sendMessage(clientPhone, replyText.trim());
-                
-                WhatsAppMessage textMsg = new WhatsAppMessage();
-                textMsg.setSender(ourNumber);
-                textMsg.setReceiver(clientPhone);
-                textMsg.setMessageText(replyText.trim());
-                textMsg.setTimestamp(LocalDateTime.now());
-                textMsg.setStatus(wamid != null ? "SENT" : "FAILED");
-                textMsg.setWamid(wamid);
-                messageDao.save(textMsg);
-                
-                String last9 = clientPhone.length() >= 9 ? clientPhone.substring(clientPhone.length() - 9) : clientPhone;
-                messagingTemplate.convertAndSend("/topic/chat/" + last9, textMsg);
-                messagingTemplate.convertAndSend("/topic/chat/global-updates", textMsg);
             }
 
             if (needsHuman) {
