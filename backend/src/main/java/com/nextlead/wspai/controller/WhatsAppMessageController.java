@@ -14,6 +14,9 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.http.MediaType;
+import com.nextlead.wspai.service.GeminiService;
+
 import java.io.File;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
@@ -31,16 +34,19 @@ public class WhatsAppMessageController {
     private final WhatsAppApiService apiService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ContactDao contactDao;
+    private final GeminiService geminiService;
 
     @Autowired
     public WhatsAppMessageController(WhatsAppMessageDao messageDao, 
                                      WhatsAppApiService apiService, 
                                      SimpMessagingTemplate messagingTemplate,
-                                     ContactDao contactDao) {
+                                     ContactDao contactDao,
+                                     GeminiService geminiService) {
         this.messageDao = messageDao;
         this.apiService = apiService;
         this.messagingTemplate = messagingTemplate;
         this.contactDao = contactDao;
+        this.geminiService = geminiService;
     }
 
     /**
@@ -204,6 +210,88 @@ public class WhatsAppMessageController {
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
 
+    @PostMapping("/sync")
+    public ResponseEntity<Void> syncMessage(@RequestBody Map<String, String> payload) {
+        String phone = payload.get("phone");
+        String text = payload.get("text");
+        String direction = payload.get("direction"); // "incoming" or "outgoing"
+        String wamid = payload.get("wamid");
+        String ourNumber = payload.getOrDefault("ourNumber", "SYSTEM");
+
+        if (phone == null || text == null || direction == null || wamid == null) {
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
+
+        // Limpiar y formatear número de teléfono
+        String cleanPhone = phone.replaceAll("\\D", "");
+        if (cleanPhone.length() == 9) {
+            cleanPhone = "51" + cleanPhone;
+        }
+
+        // Evitar duplicados por wamid
+        if (messageDao.findByWamid(wamid).isPresent()) {
+            return new ResponseEntity<>(HttpStatus.OK);
+        }
+
+        // Buscar/Crear contacto de forma segura
+        Optional<Contact> contactOpt = contactDao.findByPhone(cleanPhone);
+        if (!contactOpt.isPresent()) {
+            Contact c = new Contact();
+            c.setTelefonoPrincipal(cleanPhone);
+            c.setTipoPersona("NATURAL");
+            c.setTipoDocumento("DNI");
+            c.setNumeroDocumento(cleanPhone);
+            c.setNombres("Cliente");
+            c.setApellidos("WhatsApp");
+            c.setAiActive(false);
+            c.setDateCreated(LocalDateTime.now());
+            contactDao.save(c);
+            logger.info("Contacto auto-creado durante sincronización de chat: {}", cleanPhone);
+        }
+
+        String timestampStr = payload.get("timestamp");
+        LocalDateTime timestamp;
+        if (timestampStr != null && !timestampStr.trim().isEmpty()) {
+            try {
+                long epochSecond = Long.parseLong(timestampStr);
+                timestamp = LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochSecond(epochSecond), 
+                        java.time.ZoneId.systemDefault()
+                );
+            } catch (Exception e) {
+                logger.warn("Formato de timestamp inválido: {}", timestampStr);
+                timestamp = LocalDateTime.now();
+            }
+        } else {
+            timestamp = LocalDateTime.now();
+        }
+
+        WhatsAppMessage msg = new WhatsAppMessage();
+        msg.setWamid(wamid);
+        msg.setMessageText(text);
+        msg.setTimestamp(timestamp);
+
+        if ("incoming".equalsIgnoreCase(direction)) {
+            msg.setSender(cleanPhone);
+            msg.setReceiver(ourNumber);
+            msg.setStatus("RECEIVED");
+        } else {
+            msg.setSender(ourNumber);
+            msg.setReceiver(cleanPhone);
+            msg.setStatus("SENT");
+        }
+
+        messageDao.save(msg);
+        logger.info("Mensaje sincronizado de WhatsApp guardado (ID: {}, Wamid: {})", cleanPhone, wamid);
+
+        // Transmitir vía WebSocket
+        String last9 = cleanPhone.length() >= 9 ? cleanPhone.substring(cleanPhone.length() - 9) : cleanPhone;
+        messagingTemplate.convertAndSend("/topic/chat/" + last9, msg);
+        messagingTemplate.convertAndSend("/topic/chat/global-updates", msg);
+
+        return new ResponseEntity<>(HttpStatus.CREATED);
+    }
+
     private String getMimeType(String filename) {
         String name = filename.toLowerCase();
         if (name.endsWith(".png")) return "image/png";
@@ -221,5 +309,25 @@ public class WhatsAppMessageController {
         if (name.endsWith(".xls") || name.endsWith(".xlsx")) return "application/vnd.ms-excel";
         if (name.endsWith(".txt")) return "text/plain";
         return "application/octet-stream";
+    }
+
+    /**
+     * Endpoint para sugerir una respuesta al chat manual de un contacto.
+     */
+    @GetMapping("/suggest-reply/{phone}")
+    public ResponseEntity<Map<String, String>> suggestReply(@PathVariable String phone) {
+        String suggestion = geminiService.suggestReply(phone);
+        return ResponseEntity.ok(Map.of("suggestion", suggestion));
+    }
+
+    /**
+     * Endpoint para extraer información estructurada (Lead/Pedido) de un chat.
+     */
+    @GetMapping("/analyze-chat/{phone}")
+    public ResponseEntity<String> analyzeChat(@PathVariable String phone) {
+        String json = geminiService.analyzeChat(phone);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(json);
     }
 }

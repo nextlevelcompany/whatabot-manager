@@ -1,0 +1,36 @@
+# Dependencies and build outputs
+node_modules/
+backend/target/
+frontend/.next/
+frontend/node_modules/
+
+# IDE files
+.idea/
+.vscode/
+.continue/
+.agents/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Local environment and credentials
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+jwt.secret
+
+# Docker and Databases
+postgres_data/
+.docker/
+pgadmin/
+loki/
+prometheus/
+grafana/
+promtail/
+
+# OS files
+.DS_Store
+Thumbs.db

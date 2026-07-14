@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "NextLead CRM - WhatsApp Extension",
+  "version": "1.0",
+  "description": "Barra lateral integrada en WhatsApp Web para sincronizar contactos, notas y respuestas rápidas con tu CRM NextLead.",
+  "permissions": [
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://localhost:8081/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [{
+      "id": "ruleset",
+      "enabled": true,
+      "path": "rules.json"
+    }]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_end"
+    }
+  ]
+}

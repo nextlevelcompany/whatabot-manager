@@ -746,4 +746,159 @@ public class GeminiService {
         
         return sb.toString();
     }
+
+    /**
+     * Sugiere una respuesta de IA para el chat manual a partir del historial.
+     */
+    public String suggestReply(String phone) {
+        String apiKey = getApiKey();
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            return "Error: API Key no configurada.";
+        }
+
+        String model = settingsService.getSetting("gemini.model");
+        if (model == null || model.trim().isEmpty()) {
+            model = "gemini-1.5-flash";
+        }
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+
+        try {
+            List<WhatsAppMessage> history = messageDao.findConversation(phone);
+            if (history == null || history.isEmpty()) {
+                return "No hay mensajes en el historial para sugerir una respuesta.";
+            }
+
+            // Construir prompt contextual con catálogo y reglas
+            StringBuilder contextBuilder = new StringBuilder();
+            String publicBaseUrl = getPublicBaseUrl();
+            appendProductContext(contextBuilder, "", publicBaseUrl);
+            appendFaqContext(contextBuilder, "", publicBaseUrl);
+
+            String tone = settingsService.getSetting("ai.tone");
+            if (tone == null || tone.trim().isEmpty()) tone = "Amigable y cercano";
+
+            StringBuilder systemPrompt = new StringBuilder();
+            systemPrompt.append("Eres el Asesor Comercial de Antarqui Perú. Tu objetivo es sugerir una única respuesta comercial, servicial y directa al cliente en base al historial de la conversación y la base de conocimientos proporcionada.\n")
+                    .append("Tono: ").append(tone).append("\n\n")
+                    .append("REGLAS:\n")
+                    .append("1. Devuelve únicamente el texto de respuesta sugerido. No agregues introducciones ni comentarios.\n")
+                    .append("2. La respuesta debe ser corta (máximo 2 a 3 frases) y en español peruano natural.\n")
+                    .append("3. Si el cliente pregunta por productos o precios, usa el catálogo provisto.\n\n")
+                    .append(contextBuilder)
+                    .append("\nHISTORIAL DE CHAT:\n");
+
+            for (WhatsAppMessage msg : history) {
+                String senderName = phone.equals(msg.getSender()) ? "Cliente" : "Tú (CRM)";
+                systemPrompt.append("- ").append(senderName).append(": ").append(msg.getMessageText()).append("\n");
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("contents", List.of(Map.of("parts", List.of(Map.of("text", "Sugiere la siguiente respuesta para el cliente basado en el historial anterior.")))));
+            
+            Map<String, Object> systemInstruction = new HashMap<>();
+            systemInstruction.put("parts", List.of(Map.of("text", systemPrompt.toString())));
+            body.put("systemInstruction", systemInstruction);
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            JsonNode responseNode = restTemplate.postForObject(url, entity, JsonNode.class);
+
+            if (responseNode != null && responseNode.has("candidates")) {
+                JsonNode candidates = responseNode.get("candidates");
+                if (candidates.isArray() && candidates.size() > 0) {
+                    JsonNode textNode = candidates.get(0).path("content").path("parts").get(0).get("text");
+                    if (textNode != null) {
+                        return textNode.asText().trim();
+                    }
+                }
+            }
+            return "No se pudo generar una sugerencia de respuesta.";
+        } catch (Exception e) {
+            logger.error("Error al sugerir respuesta con Gemini: {}", e.getMessage(), e);
+            return "Error al sugerir respuesta: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Analiza el historial de chat para extraer información estructurada de Lead/Pedido.
+     */
+    public String analyzeChat(String phone) {
+        String apiKey = getApiKey();
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            return "{\"error\": \"API Key no configurada.\"}";
+        }
+
+        String model = settingsService.getSetting("gemini.model");
+        if (model == null || model.trim().isEmpty()) {
+            model = "gemini-1.5-flash";
+        }
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+
+        try {
+            List<WhatsAppMessage> history = messageDao.findConversation(phone);
+            if (history == null || history.isEmpty()) {
+                return "{\"error\": \"No hay mensajes en el historial para analizar.\"}";
+            }
+
+            StringBuilder systemPrompt = new StringBuilder();
+            systemPrompt.append("Analiza el siguiente historial de conversación de WhatsApp y extrae los datos de contacto del cliente y detalles del pedido si los hubiere.\n")
+                    .append("Debes devolver OBLIGATORIAMENTE un objeto JSON estructurado con el siguiente formato:\n")
+                    .append("{\n")
+                    .append("  \"nombres\": \"Nombre del cliente (o null si no lo menciona)\",\n")
+                    .append("  \"apellidos\": \"Apellido del cliente (o null si no lo menciona)\",\n")
+                    .append("  \"tipoDocumento\": \"DNI|RUC|CE (o null)\",\n")
+                    .append("  \"numeroDocumento\": \"Número de documento (o null)\",\n")
+                    .append("  \"telefonoPrincipal\": \"").append(phone).append("\",\n")
+                    .append("  \"email\": \"Email del cliente (o null)\",\n")
+                    .append("  \"distrito\": \"Distrito de entrega (o null)\",\n")
+                    .append("  \"direccion\": \"Dirección exacta de entrega (o null)\",\n")
+                    .append("  \"reference\": \"Referencia de domicilio (o null)\",\n")
+                    .append("  \"paymentMethod\": \"yape|plin|efectivo|transferencia (o null)\",\n")
+                    .append("  \"summary\": \"Resumen muy breve de la intención del cliente (máx 1 frase)\",\n")
+                    .append("  \"products\": [\n")
+                    .append("     { \"name\": \"Nombre del producto o pack solicitado\", \"quantity\": 1 }\n")
+                    .append("  ]\n")
+                    .append("}\n\n")
+                    .append("REGLA: Devuelve únicamente el objeto JSON sin formato markdown ni texto adicional. No uses ```json.\n\n")
+                    .append("HISTORIAL DE CHAT:\n");
+
+            for (WhatsAppMessage msg : history) {
+                String senderName = phone.equals(msg.getSender()) ? "Cliente" : "Tú (CRM)";
+                systemPrompt.append("- ").append(senderName).append(": ").append(msg.getMessageText()).append("\n");
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("contents", List.of(Map.of("parts", List.of(Map.of("text", "Analiza el historial anterior y extrae la información del cliente en formato JSON.")))));
+            
+            Map<String, Object> systemInstruction = new HashMap<>();
+            systemInstruction.put("parts", List.of(Map.of("text", systemPrompt.toString())));
+            body.put("systemInstruction", systemInstruction);
+
+            Map<String, Object> generationConfig = new HashMap<>();
+            generationConfig.put("responseMimeType", "application/json");
+            body.put("generationConfig", generationConfig);
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            JsonNode responseNode = restTemplate.postForObject(url, entity, JsonNode.class);
+
+            if (responseNode != null && responseNode.has("candidates")) {
+                JsonNode candidates = responseNode.get("candidates");
+                if (candidates.isArray() && candidates.size() > 0) {
+                    JsonNode textNode = candidates.get(0).path("content").path("parts").get(0).get("text");
+                    if (textNode != null) {
+                        return textNode.asText().trim();
+                    }
+                }
+            }
+            return "{\"error\": \"No se pudo extraer la información.\"}";
+        } catch (Exception e) {
+            logger.error("Error al analizar chat con Gemini: {}", e.getMessage(), e);
+            return "{\"error\": \"Error al analizar chat: " + e.getMessage() + "\"}";
+        }
+    }
 }

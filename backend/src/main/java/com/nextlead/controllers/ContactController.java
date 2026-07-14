@@ -32,6 +32,14 @@ public class ContactController {
         return ResponseEntity.ok(contactDao.findAll());
     }
 
+    // GET /api/contacts/search?phone={phone} — Buscar contacto por teléfono
+    @GetMapping("/search")
+    public ResponseEntity<?> getByPhone(@RequestParam String phone) {
+        return contactDao.findByPhone(phone)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
+    }
+
     // GET /api/contacts/empresas — Solo Empresas (para selector en formulario)
     @GetMapping("/empresas")
     public ResponseEntity<List<Contact>> getEmpresas() {

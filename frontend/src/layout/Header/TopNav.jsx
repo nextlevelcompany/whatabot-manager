@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -28,6 +28,12 @@ const getApiBase = () => {
     }
     return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8081';
 };
+
+// Wrapper to filter out 'show' prop from motion.div to avoid React warning
+const MotionDropdownMenu = React.forwardRef(({ show, ...props }, ref) => (
+    <motion.div ref={ref} {...props} />
+));
+MotionDropdownMenu.displayName = 'MotionDropdownMenu';
 
 const TopNav = () => {
     const router = useRouter();
@@ -242,7 +248,7 @@ const TopNav = () => {
                                 </span>
                             </InputGroup>
                         </Dropdown.Toggle>
-                        <Dropdown.Menu as={motion.div}
+                        <Dropdown.Menu as={MotionDropdownMenu}
                             initial="initial"
                             animate={showDropdown ? "open" : "close"}
                             variants={pageVariants}

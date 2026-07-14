@@ -125,7 +125,7 @@ const parseMessageMedia = (msgText, API_BASE) => {
     return { images, audios, videos, displayText };
 };
 
-const ContactLiveChats = ({ contacts = [] }) => {
+const ContactLiveChats = ({ contacts = [], isQrLine = false }) => {
     // State management
     const [chatsList, setChatsList] = useState([]);
     const [selectedContact, setSelectedContact] = useState(null);
@@ -137,7 +137,63 @@ const ContactLiveChats = ({ contacts = [] }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [chatFilter, setChatFilter] = useState('all'); // 'all' | 'unread' | 'unanswered'
     
+    const [cannedSearch, setCannedSearch] = useState('');
+    const [customResponses, setCustomResponses] = useState([]);
+    const [newTitle, setNewTitle] = useState('');
+    const [newText, setNewText] = useState('');
+    const [isAddingCanned, setIsAddingCanned] = useState(false);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('nextlead_canned_responses');
+            if (saved) {
+                try {
+                    setCustomResponses(JSON.parse(saved));
+                } catch (e) {
+                    console.error("Error parsing custom responses:", e);
+                }
+            }
+        }
+    }, []);
+
+    const saveCustomResponse = (title, text) => {
+        if (!title.trim() || !text.trim()) return;
+        const newResponse = {
+            id: 'c_' + Date.now(),
+            title: title.trim(),
+            text: text.trim()
+        };
+        const updated = [...customResponses, newResponse];
+        setCustomResponses(updated);
+        localStorage.setItem('nextlead_canned_responses', JSON.stringify(updated));
+        setNewTitle('');
+        setNewText('');
+        setIsAddingCanned(false);
+    };
+
+    const deleteCustomResponse = (id) => {
+        const updated = customResponses.filter(r => r.id !== id);
+        setCustomResponses(updated);
+        localStorage.setItem('nextlead_canned_responses', JSON.stringify(updated));
+    };
+
+    const defaultCanned = [
+        { id: 'd1', title: '👋 Saludo Inicial', text: '¡Hola! Qué gusto saludarte. ¿En qué te puedo ayudar hoy?' },
+        { id: 'd2', title: '💳 Datos de Pago', text: 'Nuestros métodos de pago son:\n- Yape/Plin: 999 999 999 (NextLead CRM)\n- Banco BCP Ahorros: 191-XXXXXXXX-X-XX\nFavor de enviar el comprobante de pago una vez realizado.' },
+        { id: 'd3', title: '🕒 Horario de Atención', text: 'Nuestro horario de atención es de Lunes a Viernes de 9:00 AM a 6:00 PM y Sábados de 9:00 AM a 1:00 PM.' },
+        { id: 'd4', title: '📍 Dirección Principal', text: 'Nuestra oficina principal está ubicada en Av. Javier Prado Este 1234, San Isidro, Lima.' },
+        { id: 'd5', title: '🙏 Despedida', text: '¡Muchas gracias por contactarnos! Que tengas un excelente día. Quedamos a tu servicio.' }
+    ];
+
+    const allCanned = [...defaultCanned, ...customResponses];
+    
+    const filteredCanned = allCanned.filter(r => 
+        r.title.toLowerCase().includes(cannedSearch.toLowerCase()) || 
+        r.text.toLowerCase().includes(cannedSearch.toLowerCase())
+    );
+    
     const messagesEndRef = useRef(null);
+    const hasInitializedRef = useRef(false);
 
     // Helper to clean phone numbers to digits only
     const cleanPhoneNumber = (phone) => {
@@ -156,8 +212,10 @@ const ContactLiveChats = ({ contacts = [] }) => {
     }, [wspMessages]);
 
     // Build the conversations list with their last messages
-    const initializeChatsList = useCallback(async () => {
-        setLoadingChats(true);
+    const initializeChatsList = useCallback(async (isInitial = false) => {
+        if (isInitial) {
+            setLoadingChats(true);
+        }
         try {
             // 1. Fetch all messages in DB
             const res = await fetch(`${API_BASE}/api/messages`);
@@ -185,13 +243,22 @@ const ContactLiveChats = ({ contacts = [] }) => {
                     lastMessage = contactMessages[0];
                 }
 
-                const displayName = contact.tipoPersona === 'NATURAL'
+                let displayName = contact.tipoPersona === 'NATURAL'
                     ? `${contact.nombres || ''} ${contact.apellidos || ''}`.trim()
                     : (contact.razonSocial || '');
 
-                const initials = contact.tipoPersona === 'NATURAL'
-                    ? `${(contact.nombres || '?')[0]}${(contact.apellidos || '?')[0]}`
-                    : (contact.razonSocial || '?')[0];
+                if (displayName === 'Cliente WhatsApp' || displayName === 'Cliente' || !displayName) {
+                    displayName = contact.telefonoPrincipal || 'WhatsApp';
+                }
+
+                let initials = '';
+                if (displayName === contact.telefonoPrincipal) {
+                    initials = '#';
+                } else {
+                    initials = contact.tipoPersona === 'NATURAL'
+                        ? `${(contact.nombres || '?')[0]}${(contact.apellidos || '?')[0]}`
+                        : (contact.razonSocial || '?')[0];
+                }
 
                 const colors = ['info', 'warning', 'success', 'danger', 'primary', 'violet'];
                 const avtBg = colors[(contact.id || 0) % colors.length];
@@ -210,6 +277,62 @@ const ContactLiveChats = ({ contacts = [] }) => {
                 };
             }).filter(Boolean);
 
+            // Fallback: si no hay contactos cargados todavía, construir la lista desde los mensajes
+            // guardados para que el chat siga siendo navegable mientras el sync termina de crear contactos.
+            if (mappedChats.length === 0 && allMessages.length > 0) {
+                const groupedByPhone = new Map();
+
+                allMessages.forEach((msg) => {
+                    const sender = cleanPhoneNumber(msg.sender || '');
+                    const receiver = cleanPhoneNumber(msg.receiver || '');
+                    const keyPhone = sender && sender !== 'SYSTEM' ? sender : receiver;
+                    if (!keyPhone) return;
+
+                    const groupKey = keyPhone.length >= 9 ? keyPhone.substring(keyPhone.length - 9) : keyPhone;
+                    const existing = groupedByPhone.get(groupKey) || [];
+                    existing.push(msg);
+                    groupedByPhone.set(groupKey, existing);
+                });
+
+                const fallbackChats = Array.from(groupedByPhone.entries()).map(([last9, messages]) => {
+                    messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const lastMessage = messages[0];
+                    const fallbackName = last9 || 'WhatsApp';
+                    const initials = fallbackName.slice(-2).toUpperCase();
+
+                    return {
+                        id: last9,
+                        telefonoPrincipal: last9,
+                        tipoPersona: 'NATURAL',
+                        nombres: 'Chat',
+                        apellidos: fallbackName,
+                        razonSocial: '',
+                        displayName: fallbackName,
+                        initials,
+                        avtBg: 'primary',
+                        aiActive: false,
+                        lastMessage: {
+                            text: lastMessage.messageText,
+                            timestamp: new Date(lastMessage.timestamp),
+                            status: lastMessage.status,
+                            sender: lastMessage.sender
+                        }
+                    };
+                });
+
+                fallbackChats.sort((a, b) => {
+                    if (a.lastMessage && b.lastMessage) {
+                        return b.lastMessage.timestamp - a.lastMessage.timestamp;
+                    }
+                    if (a.lastMessage) return -1;
+                    if (b.lastMessage) return 1;
+                    return 0;
+                });
+
+                setChatsList(fallbackChats);
+                return;
+            }
+
             // 3. Sort by last message date desc (contacts without messages go to the bottom)
             mappedChats.sort((a, b) => {
                 if (a.lastMessage && b.lastMessage) {
@@ -224,14 +347,19 @@ const ContactLiveChats = ({ contacts = [] }) => {
         } catch (err) {
             console.error("Error inicializando lista de chats:", err);
         } finally {
-            setLoadingChats(false);
+            if (isInitial) {
+                setLoadingChats(false);
+            }
         }
     }, [contacts]);
 
     // Initialize list when component mounts or contacts change
     useEffect(() => {
-        if (contacts.length > 0) {
-            initializeChatsList();
+        if (!hasInitializedRef.current) {
+            initializeChatsList(true);
+            hasInitializedRef.current = true;
+        } else {
+            initializeChatsList(false);
         }
     }, [contacts, initializeChatsList]);
 
@@ -281,24 +409,7 @@ const ContactLiveChats = ({ contacts = [] }) => {
         }
     };
 
-    // Toggle AI for selected contact
-    const handleToggleAI = async () => {
-        if (!selectedContact || !selectedContact.id) return;
-        try {
-            const res = await fetch(`${API_BASE}/api/contacts/${selectedContact.id}/toggle-ai`, {
-                method: 'PUT'
-            });
-            if (res.ok) {
-                const data = await res.json();
-                // Update selected contact
-                setSelectedContact(prev => ({ ...prev, aiActive: data.aiActive }));
-                // Update list
-                setChatsList(prev => prev.map(c => c.id === selectedContact.id ? { ...c, aiActive: data.aiActive } : c));
-            }
-        } catch (err) {
-            console.error("Error alternando la IA:", err);
-        }
-    };
+
 
     // Send manual message
     const sendWspMessage = async () => {
@@ -309,25 +420,28 @@ const ContactLiveChats = ({ contacts = [] }) => {
         setWspInput('');
         setSending(true);
 
-        // Optimistic update of local conversation
-        const newMsg = {
-            sender: 'me',
-            text: textToSend,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-        setWspMessages(prev => [...prev, newMsg]);
+        if (!isQrLine) {
+            // Optimistic update of local conversation
+            const newMsg = {
+                sender: 'me',
+                text: textToSend,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            setWspMessages(prev => [...prev, newMsg]);
+        }
 
         try {
-            const res = await fetch(`${API_BASE}/api/messages`, {
+            const sendUrl = isQrLine ? `http://localhost:8082/api/send` : `${API_BASE}/api/messages`;
+            const sendBody = isQrLine 
+                ? { phone: phone, text: textToSend }
+                : { sender: 'system', receiver: phone, messageText: textToSend };
+
+            const res = await fetch(sendUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    sender: 'system',
-                    receiver: phone,
-                    messageText: textToSend
-                })
+                body: JSON.stringify(sendBody)
             });
 
             if (!res.ok) {
@@ -514,7 +628,7 @@ const ContactLiveChats = ({ contacts = [] }) => {
                     <header className="aside-header">
                         <div className="d-flex align-items-center justify-content-between w-100">
                             <h1 className="h4 mb-0 fw-bold">Chats</h1>
-                            <Button variant="flush-dark" size="xs" onClick={initializeChatsList} title="Actualizar lista" className="btn-icon btn-rounded flush-soft-hover">
+                            <Button variant="flush-dark" size="xs" onClick={() => initializeChatsList(true)} title="Actualizar lista" className="btn-icon btn-rounded flush-soft-hover">
                                 <RefreshCw size={14} />
                             </Button>
                         </div>
@@ -623,11 +737,6 @@ const ContactLiveChats = ({ contacts = [] }) => {
                                                                     </>
                                                                 )}
                                                             </div>
-                                                            {isAiActive && (
-                                                                <Badge bg="success" text="light" className="py-0.5 px-1.5 ms-2 flex-shrink-0" style={{ fontSize: '0.65rem' }}>
-                                                                    <i className="bi bi-cpu-fill"></i> IA
-                                                                </Badge>
-                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -662,21 +771,12 @@ const ContactLiveChats = ({ contacts = [] }) => {
                                         </div>
                                     </div>
                                     
-                                    {/* IA Toggle Button */}
+                                    {/* Status Badge */}
                                     <div className="d-flex align-items-center me-2">
-                                        <div className="d-flex align-items-center border rounded-pill py-1 px-3 bg-light-soft">
-                                            <i className={`bi bi-cpu-fill me-2 ${selectedContact.aiActive ? 'text-success' : 'text-muted'}`} style={{ fontSize: '1.05rem' }}></i>
-                                            <span className="small text-muted me-2" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
-                                                Responder con IA (Gemini)
-                                            </span>
-                                            <Form.Check 
-                                                type="switch"
-                                                id="ai-toggle-chats"
-                                                checked={selectedContact.aiActive || false}
-                                                onChange={handleToggleAI}
-                                                className="m-0 cursor-pointer"
-                                            />
-                                        </div>
+                                        <span className="badge bg-soft-success text-success border border-success-20 px-3 py-1.5 rounded-pill small d-flex align-items-center gap-1.5" style={{ fontSize: '0.78rem', fontWeight: '500' }}>
+                                            <span className="d-inline-block rounded-circle bg-success" style={{ width: '6px', height: '6px' }}></span>
+                                            Sincronizado
+                                        </span>
                                     </div>
                                 </div>
                             </header>
@@ -809,6 +909,7 @@ const ContactLiveChats = ({ contacts = [] }) => {
                                         className="border-0 bg-light rounded-pill ps-4 py-2"
                                         style={{ fontSize: '0.88rem' }}
                                     />
+
                                     <Button 
                                         variant="primary" 
                                         onClick={sendWspMessage} 
@@ -820,6 +921,133 @@ const ContactLiveChats = ({ contacts = [] }) => {
                                     </Button>
                                 </InputGroup>
                             </footer>
+
+                            {/* Panel Derecho: Respuestas Rápidas */}
+                            <div className="chat-info" style={{ display: 'block', borderLeft: '1px solid #eaeaea', width: '320px', backgroundColor: '#fcfcfc' }}>
+                                <SimpleBar style={{ height: "100%" }} className="nicescroll-bar">
+                                    <div className="p-3">
+                                        <div className="d-flex align-items-center justify-content-between mb-3">
+                                            <h6 className="fw-bold mb-0 text-dark d-flex align-items-center" style={{ fontSize: '0.9rem' }}>
+                                                <i className="bi bi-chat-left-text-fill text-primary me-2"></i>
+                                                Respuestas Rápidas
+                                            </h6>
+                                            <Button 
+                                                variant="outline-primary" 
+                                                size="sm" 
+                                                onClick={() => setIsAddingCanned(!isAddingCanned)}
+                                                className="rounded-pill px-2 py-0.5"
+                                                style={{ fontSize: '0.72rem', fontWeight: '600' }}
+                                            >
+                                                {isAddingCanned ? 'Cancelar' : '+ Nueva'}
+                                            </Button>
+                                        </div>
+
+                                        {isAddingCanned && (
+                                            <Card className="border border-primary-30 shadow-none bg-light-soft mb-3">
+                                                <Card.Body className="p-3">
+                                                    <span className="fw-bold text-dark d-block mb-2" style={{ fontSize: '0.78rem' }}>
+                                                        Crear Respuesta Rápida
+                                                    </span>
+                                                    <div className="d-flex flex-column gap-2" style={{ fontSize: '0.8rem' }}>
+                                                        <div>
+                                                            <Form.Label className="text-muted small mb-1">Título / Atajo:</Form.Label>
+                                                            <Form.Control 
+                                                                type="text" 
+                                                                size="sm" 
+                                                                placeholder="Ej. Cuenta BCP"
+                                                                value={newTitle} 
+                                                                onChange={(e) => setNewTitle(e.target.value)} 
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <Form.Label className="text-muted small mb-1">Mensaje de Respuesta:</Form.Label>
+                                                            <Form.Control 
+                                                                as="textarea" 
+                                                                rows={3}
+                                                                size="sm" 
+                                                                placeholder="Escribe el mensaje aquí..."
+                                                                value={newText} 
+                                                                onChange={(e) => setNewText(e.target.value)} 
+                                                            />
+                                                        </div>
+                                                        <Button 
+                                                            variant="primary" 
+                                                            size="sm" 
+                                                            className="mt-1 w-100 py-1"
+                                                            style={{ fontSize: '0.75rem', fontWeight: '600' }}
+                                                            onClick={() => saveCustomResponse(newTitle, newText)}
+                                                            disabled={!newTitle.trim() || !newText.trim()}
+                                                        >
+                                                            Guardar Respuesta
+                                                        </Button>
+                                                    </div>
+                                                </Card.Body>
+                                            </Card>
+                                        )}
+
+                                        <div className="mb-3">
+                                            <InputGroup size="sm">
+                                                <InputGroup.Text className="bg-white border-end-0">
+                                                    <Search size={12} className="text-muted" />
+                                                </InputGroup.Text>
+                                                <Form.Control
+                                                    type="text"
+                                                    placeholder="Buscar respuesta..."
+                                                    className="border-start-0 bg-white ps-0"
+                                                    value={cannedSearch}
+                                                    onChange={(e) => setCannedSearch(e.target.value)}
+                                                />
+                                                {cannedSearch && (
+                                                    <Button variant="outline-light" size="sm" onClick={() => setCannedSearch('')} className="border-start-0 border-light text-muted">
+                                                        ×
+                                                    </Button>
+                                                )}
+                                            </InputGroup>
+                                        </div>
+
+                                        <div className="d-flex flex-column gap-2">
+                                            {filteredCanned.length === 0 ? (
+                                                <div className="text-center py-4 text-muted" style={{ fontSize: '0.8rem' }}>
+                                                    No se encontraron respuestas.
+                                                </div>
+                                            ) : (
+                                                filteredCanned.map((canned) => (
+                                                    <Card key={canned.id} className="border-light shadow-none bg-white mb-0 hover-shadow-sm transition-all" style={{ border: '1px solid #eee' }}>
+                                                        <Card.Body className="p-2.5">
+                                                            <div className="d-flex justify-content-between align-items-start mb-1">
+                                                                <span className="fw-bold text-dark" style={{ fontSize: '0.8rem' }}>{canned.title}</span>
+                                                                {canned.id.toString().startsWith('c_') && (
+                                                                    <Button 
+                                                                        variant="flush-dark" 
+                                                                        size="xs" 
+                                                                        className="p-0 border-0 text-muted hover-danger bg-transparent"
+                                                                        onClick={() => deleteCustomResponse(canned.id)}
+                                                                        title="Eliminar"
+                                                                    >
+                                                                        <i className="bi bi-trash-fill" style={{ fontSize: '0.72rem' }}></i>
+                                                                    </Button>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-muted mb-2 text-wrap-pre" style={{ fontSize: '0.75rem', lineHeight: '1.4', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto' }}>
+                                                                {canned.text}
+                                                            </p>
+                                                            <Button 
+                                                                variant="outline-primary" 
+                                                                size="sm" 
+                                                                className="w-100 py-1" 
+                                                                style={{ fontSize: '0.72rem', fontWeight: '500' }}
+                                                                onClick={() => setWspInput(canned.text)}
+                                                            >
+                                                                Usar en chat
+                                                            </Button>
+                                                        </Card.Body>
+                                                    </Card>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </SimpleBar>
+                            </div>
                         </>
                     ) : (
                         <div className="d-flex justify-content-center align-items-center h-100 flex-column text-muted py-5 bg-light-soft">
